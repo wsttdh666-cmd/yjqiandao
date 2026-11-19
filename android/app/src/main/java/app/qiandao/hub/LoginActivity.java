@@ -45,7 +45,13 @@ public class LoginActivity extends Activity {
     }
 
     private void finishWith(String storage) {
-        CookieManager.getInstance().flush();
+        CookieManager cookies = CookieManager.getInstance();
+        String url = web.getUrl();
+        String all = url == null ? null : cookies.getCookie(url);
+        if (all != null) {
+            for (String pair : all.split(";\\s*")) cookies.setCookie(url, pair + "; Max-Age=2592000; Path=/");
+        }
+        cookies.flush();
         if (pending != null) {
             JSObject result = new JSObject();
             result.put("storage", storage);
