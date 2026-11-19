@@ -93,6 +93,9 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .filters button { flex: 1; padding: 8px 4px; border-radius: 10px; background: var(--line); font-size: 14px; }
 .filters button.on { background: var(--accent); color: #fff; }
 .filters .fav { flex: 0 0 auto; padding: 8px 12px; }
+#siteSearch { display: block; width: calc(100% - 36px); margin: 0 18px; }
+#siteFilters { margin: 10px 18px 16px; }
+.card .star { align-self: flex-start; }
 .vendors { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 16px 0; }
 .vendors[hidden] { display: none; }
 .vendors button { padding: 5px 10px; border-radius: 99px; background: var(--line); font-size: 13px; }
@@ -128,6 +131,8 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 <header><h1>一键签到</h1><button class="small-btn" id="checkBtn">检查更新</button><button class="icon-btn" id="addBtn">＋</button></header>
 <div id="update" hidden><span>有新版本</span><button class="small-btn" id="updBtn">更新</button></div>
 <button id="signAll">全部签到</button>
+<input class="field" id="siteSearch" placeholder="搜站点">
+<div class="filters" id="siteFilters"><button data-f="all" class="on">全部</button><button data-f="sign">签到</button><button data-f="view">仅查看</button><button class="fav" id="siteFav">★ 收藏</button></div>
 <div id="list"></div>
 <div class="ver" id="ver"></div>
 
@@ -324,9 +329,27 @@ async function call(s, path, opt = {}) {
 
 // ---------- 站点列表 ----------
 const groupOf = s => $(s.view ? 'gView' : 'gSign');
+let siteKind = 'all', siteFavOnly = false;
 function updateGroups() {
-  for (const g of ['gSign', 'gView']) if ($(g)) $(g).hidden = $(g).children.length === 1;
+  const q = $('siteSearch').value.trim().toLowerCase();
+  for (const s of sites) {
+    const el = $('c_' + s.id);
+    if (el) el.hidden = !(s.name + ' ' + [s.url, ...(s.alts || [])].join(' ')).toLowerCase().includes(q) ||
+      (siteFavOnly && !s.fav) || (siteKind === 'sign' && s.view) || (siteKind === 'view' && !s.view);
+  }
+  for (const g of ['gSign', 'gView']) if ($(g)) $(g).hidden = ![...$(g).querySelectorAll('.card')].some(c => !c.hidden);
 }
+$('siteSearch').oninput = updateGroups;
+for (const b of $('siteFilters').querySelectorAll('[data-f]')) b.onclick = () => {
+  siteKind = b.dataset.f;
+  for (const x of $('siteFilters').querySelectorAll('[data-f]')) x.classList.toggle('on', x === b);
+  updateGroups();
+};
+$('siteFav').onclick = () => {
+  siteFavOnly = !siteFavOnly;
+  $('siteFav').classList.toggle('on', siteFavOnly);
+  updateGroups();
+};
 function renderList() {
   const box = document.createElement('div');
   box.id = 'list';
@@ -342,9 +365,20 @@ function makeCard(s) {
   const el = document.createElement('div');
   el.className = 'card';
   el.id = 'c_' + s.id;
-  el.innerHTML = '<div class="row"><div class="main"><div class="name"></div><div class="info"></div></div><span class="chip"></span></div>' +
+  el.innerHTML = '<div class="row"><div class="main"><div class="name"></div><div class="info"></div></div><span class="chip"></span><button class="star">☆</button></div>' +
     '<div class="row"><div class="links"></div><button class="ibtn topup" hidden>充值</button><button class="ibtn keys">密钥</button><button class="ibtn invite">邀请</button><button class="ibtn edit">编辑</button></div>';
   el.querySelector('.name').textContent = s.name;
+  const star = el.querySelector('.star');
+  star.classList.toggle('on', !!s.fav);
+  star.textContent = s.fav ? '★' : '☆';
+  star.onclick = e => {
+    e.stopPropagation();
+    s.fav = !s.fav;
+    save();
+    star.classList.toggle('on', s.fav);
+    star.textContent = s.fav ? '★' : '☆';
+    if (siteFavOnly) updateGroups();
+  };
   for (const u of [s.url, ...(s.alts || [])]) {
     const a = document.createElement('span');
     a.className = 'link';
