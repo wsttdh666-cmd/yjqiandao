@@ -892,14 +892,20 @@ const normUrl = u => {
   try { return new URL(u).origin; } catch { return u; }
 };
 async function detect(url) {
+  const r = await probe(url);
+  if (!r) throw new Error('认不出这个站');
+  return r;
+}
+async function probe(url) {
   try {
     const st = (await req(url + '/api/status')).j;
     if (st.success) return { type: 'newapi', checkin: (st.data || {}).checkin_enabled };
+    if ((await req(url + '/api/' + Math.random().toString(36).slice(2))).status === 401) return null;
     if ((await req(url + '/api/checkin/status')).status === 401) return { type: 'panel' };
     if ((await req(url + '/api/user/checkin/status')).status === 401) return { type: 'imgsite' };
     if ((await req(url + '/api/me')).status === 401 && (await req(url + '/api/wallet/claim/daily', { method: 'POST' })).status === 401) return { type: 'wallet' };
   } catch { throw new Error('连不上这个网址'); }
-  throw new Error('认不出这个站');
+  return null;
 }
 const manualKey = t => t === 'other' || t === 'wallet';
 let shownType = null;
