@@ -283,7 +283,9 @@ const A = {
       if (!j.success) throw new Error(j.message || '查不到签到状态');
       const d = j.data;
       if (!d.stats.checked_in_today && d.eligibility && !d.eligibility.can_checkin) throw new Error(d.eligibility.reason || '暂时不能签到');
-      return { done: d.stats.checked_in_today, captcha: d.captcha_enabled };
+      const last = (d.stats.records || []).reduce((a, r) => !a || r.checkin_date > a.checkin_date ? r : a, null);
+      const got = d.stats.checked_in_today && last ? '+' + money(await currency(s.url), last.quota_awarded) : '';
+      return { done: d.stats.checked_in_today, captcha: d.captcha_enabled, got };
     },
     async balance(s) {
       const { j } = await call(s, '/api/user/self');
@@ -528,6 +530,7 @@ async function refreshSite(s) {
   setCard(s, '查询中', 'wait');
   try {
     const st = await A[s.type].status(s);
+    if (st.got) s.got = { day: today(), amount: st.got };
     setCard(s, st.done ? '已签 ✓' : '未签', st.done ? 'ok' : '', withToday(s, await A[s.type].balance(s)));
     if (!(s.id in topupUrl)) checkTopup(s);
     return st;
