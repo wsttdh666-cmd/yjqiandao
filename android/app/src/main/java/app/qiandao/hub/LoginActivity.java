@@ -1,6 +1,7 @@
 package app.qiandao.hub;
 
 import android.app.Activity;
+import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
@@ -9,6 +10,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 
@@ -41,7 +43,24 @@ public class LoginActivity extends Activity {
             }
         });
         web.loadUrl(getIntent().getStringExtra("url"));
-        done.setOnClickListener(v -> web.evaluateJavascript("JSON.stringify(Object.assign({}, localStorage))", this::finishWith));
+        done.setOnClickListener(v -> {
+            if (!onSite()) {
+                Toast.makeText(this, "还没回到站点页面，登录完再点", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            web.evaluateJavascript("JSON.stringify(Object.assign({}, localStorage))", this::finishWith);
+        });
+    }
+
+    private static String host(String url) {
+        String h = url == null ? null : Uri.parse(url).getHost();
+        if (h == null) return "";
+        return h.startsWith("www.") ? h.substring(4) : h;
+    }
+
+    private boolean onSite() {
+        String site = host(getIntent().getStringExtra("url")), now = host(web.getUrl());
+        return now.equals(site) || now.endsWith("." + site) || site.endsWith("." + now);
     }
 
     private void finishWith(String storage) {

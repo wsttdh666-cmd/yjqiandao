@@ -442,7 +442,8 @@ function makeCard(s) {
   el.querySelector('.invite').hidden = !(s.type === 'imgsite' ? canLogin(s) : apiSite(s));
   el.querySelector('.invite').onclick = e => { e.stopPropagation(); showInfo(s, 'invite'); };
   el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
-  el.onclick = () => (s.type === 'imgsite' || s.type === 'other' ? openEdit(s) : openModels(s));
+  el.onclick = () => pending.some(p => p.s === s) ? openCaptcha()
+    : s.type === 'newapi' || (s.type === 'panel' && s.price) ? openModels(s) : openEdit(s);
   return el;
 }
 const openBrowser = url => Capacitor.nativePromise('AppTools', 'open', { url });
