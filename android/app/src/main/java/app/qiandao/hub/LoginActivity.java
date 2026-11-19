@@ -49,16 +49,20 @@ public class LoginActivity extends Activity {
                 return;
             }
             String scan = getIntent().getStringExtra("scan");
-            if (scan == null) {
-                web.evaluateJavascript("JSON.stringify(Object.assign({}, localStorage))", storage -> finishWith(storage, null));
-                return;
-            }
-            web.evaluateJavascript(scan, key -> {
-                if (key == null || key.equals("null") || key.equals("\"\"")) {
-                    Toast.makeText(this, "这页没找到密钥，翻到显示密钥的页面再点完成", Toast.LENGTH_SHORT).show();
+            boolean optional = getIntent().getBooleanExtra("optional", false);
+            web.evaluateJavascript("JSON.stringify(Object.assign({}, localStorage))", storage -> {
+                if (scan == null) {
+                    finishWith(storage, null);
                     return;
                 }
-                finishWith("null", key);
+                web.evaluateJavascript(scan, key -> {
+                    boolean none = key == null || key.equals("null") || key.equals("\"\"");
+                    if (none && !optional) {
+                        Toast.makeText(this, "这页没找到密钥，翻到显示密钥的页面再点完成", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    finishWith(storage, none ? null : key);
+                });
             });
         });
     }

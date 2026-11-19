@@ -957,11 +957,13 @@ $('webLogin').onclick = async () => {
     $('webState').textContent = '已拿到密钥 ✓';
     return;
   }
-  const { storage } = await Capacitor.nativePromise('AppTools', 'webLogin', { url });
+  const { storage, key } = await Capacitor.nativePromise('AppTools', 'webLogin', { url, scan: shownType === 'wallet' ? KEY_SCAN : undefined, optional: true });
   const store = JSON.parse(JSON.parse(storage) || 'null');
   if (!store) return;
   webStore = store;
-  $('webState').textContent = '已登录 ✓';
+  const k = JSON.parse(key || 'null');
+  if (k) $('fKey').value = k;
+  $('webState').textContent = k ? '已登录，已拿到密钥 ✓' : '已登录 ✓';
 };
 function openEdit(s) {
   editing = s;
