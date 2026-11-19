@@ -415,7 +415,7 @@ async function refreshSite(s) {
     } catch (e) { setCard(s, '出错', 'bad', e.message); }
     return;
   }
-  if (!canLogin(s)) return setCard(s, '没填账号', '', '');
+  if (!canLogin(s)) return setCard(s, s.type === 'other' ? '需手动签' : '没填账号', '', '');
   setCard(s, '查询中', 'wait');
   try {
     const st = await A[s.type].status(s);
@@ -798,7 +798,7 @@ function checkUrl() {
   }, () => {
     if (!found || found.p !== p) return;
     showType('other');
-    setKind('view');
+    if (!editing) setKind('view');
   });
   return p;
 }
@@ -862,7 +862,7 @@ $('saveBtn').onclick = async () => {
   const s = editing || { id: 's' + Date.now() };
   const loginChanged = s.url !== url || s.user !== $('fUser').value.trim() || s.pass !== $('fPass').value;
   Object.assign(s, {
-    type, url, view: view || type === 'other',
+    type, url, view,
     alts: [...$('alts').querySelectorAll('input')].map(x => normUrl(x.value)).filter(Boolean),
     name: $('fName').value.trim() || new URL(url).hostname,
     user: type === 'other' ? '' : $('fUser').value.trim(),
