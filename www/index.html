@@ -120,6 +120,8 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .log .lt span:last-child { color: var(--sub); font-weight: 400; font-size: 12px; white-space: nowrap; }
 .log .ld { color: var(--sub); margin-top: 3px; word-break: break-all; }
 .log.bad .ld { color: var(--bad); }
+#keyBody .gtitle { margin: 14px 0 0; }
+#keyBody .gtitle:first-child { margin-top: 2px; }
 .keyrow { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .keyrow .main { flex: 1; min-width: 0; }
 .keyrow .kt { font-size: 14px; font-weight: 600; }
@@ -438,7 +440,7 @@ function makeCard(s) {
   el.className = 'card';
   el.id = 'c_' + s.id;
   el.innerHTML = '<div class="row"><div class="main"><div class="name"></div><div class="info"></div></div><span class="chip"></span><button class="star">☆</button></div>' +
-    '<div class="row"><div class="links"></div><button class="ibtn topup" hidden>充值</button><button class="ibtn keys">密钥</button><button class="ibtn invite">邀请</button><button class="ibtn edit">编辑</button></div>';
+    '<div class="row"><div class="links"></div><button class="ibtn topup" hidden>充值</button><button class="ibtn models">模型</button><button class="ibtn edit">编辑</button></div>';
   el.querySelector('.name').textContent = s.name;
   const star = el.querySelector('.star');
   star.classList.toggle('on', !!s.fav);
@@ -460,17 +462,15 @@ function makeCard(s) {
   }
   el.querySelector('.topup').hidden = !topupUrl[s.id];
   el.querySelector('.topup').onclick = e => { e.stopPropagation(); openBrowser(topupUrl[s.id]); };
-  el.querySelector('.keys').onclick = e => { e.stopPropagation(); showInfo(s, 'keys'); };
-  el.querySelector('.invite').hidden = !(s.type === 'imgsite' ? canLogin(s) : apiSite(s));
-  el.querySelector('.invite').onclick = e => { e.stopPropagation(); showInfo(s, 'invite'); };
+  el.querySelector('.models').hidden = !(s.type === 'newapi' || (s.type === 'panel' && s.price));
+  el.querySelector('.models').onclick = e => { e.stopPropagation(); openModels(s); };
   el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
   el.querySelector('.chip').onclick = e => {
     if (e.target.textContent !== '去登录') return;
     e.stopPropagation();
     webLoginSite(s);
   };
-  el.onclick = () => pending.some(p => p.s === s) ? openCaptcha()
-    : s.type === 'newapi' || (s.type === 'panel' && s.price) ? openModels(s) : openEdit(s);
+  el.onclick = () => pending.some(p => p.s === s) ? openCaptcha() : showInfo(s);
   return el;
 }
 const openBrowser = url => Capacitor.nativePromise('AppTools', 'open', { url });
@@ -561,7 +561,7 @@ let infoNow = null;
 const maskKey = k => k.slice(0, 7) + '……' + k.slice(-4);
 function infoRow(r) {
   const el = document.createElement('div');
-  if (!r.text) {
+  if (!r.text && !r.open) {
     el.className = 'empty';
     el.textContent = r.title;
     return el;
@@ -570,7 +570,11 @@ function infoRow(r) {
   el.innerHTML = '<div class="main"><div class="kt"></div><div class="ks"></div></div><button class="small-btn">复制</button>';
   el.querySelector('.kt').textContent = r.title;
   el.querySelector('.ks').textContent = r.sub;
-  el.querySelector('button').onclick = e => copyText(r.text, e.target);
+  const btn = el.querySelector('button');
+  if (r.open) {
+    btn.textContent = '打开';
+    btn.onclick = () => openBrowser(r.open);
+  } else btn.onclick = e => copyText(r.text, e.target);
   return el;
 }
 async function revealTokens(a) {
@@ -582,67 +586,59 @@ async function revealTokens(a) {
     : t.key));
   return tokens.map((t, i) => ({ title: t.name + (t.status === 1 ? '' : '（不可用）'), sub: maskKey('sk-' + full[i]), text: 'sk-' + full[i] }));
 }
-function infoParts(s, kind) {
+function infoSections(s) {
   const a = apiSite(s);
-  const addr = u => ({ title: '调用地址', sub: u + '/v1', text: u + '/v1' });
-  if (kind === 'invite') {
-    if (s.type === 'imgsite') return [[], (async () => {
-      const { j } = await call(s, '/api/user/invite-rebate');
-      if (!j.code) throw new Error(j.error || '拿不到邀请码');
-      return [{ title: '邀请码', sub: j.code + '　已邀请 ' + j.invitee_count + ' 人', text: j.code }];
-    })()];
-    return [[], (async () => {
-      const [aff, me, cur] = await Promise.all([call(a, '/api/user/aff'), call(a, '/api/user/self'), currency(a.url)]);
-      if (!aff.j.success || !aff.j.data) throw new Error(aff.j.message || '这个站没有邀请');
-      const u = me.j.data || {}, link = a.url + '/register?aff=' + aff.j.data;
-      return [{ title: '邀请链接', sub: link + '　已邀请 ' + (u.aff_count || 0) + ' 人 · 累计 ' + money(cur, u.aff_history_quota || 0), text: link }];
-    })()];
-  }
-  const now = [addr((a || s).url)];
-  for (const u of s.type === 'panel' ? [] : s.alts || []) now.push({ ...addr(u), title: '备用调用地址' });
-  if (s.key) now.push({ title: '密钥', sub: maskKey(s.key), text: s.key });
-  if (s.type === 'imgsite') return [now, canLogin(s) ? (async () => {
-    const { j } = await call(s, '/api/developer/keys');
-    return (j.data || []).map(k => ({ title: k.name + (k.status === 'active' ? '' : '（不可用）'), sub: maskKey(k.key), text: k.key }));
-  })() : null];
-  if (!a) return [now, null];
-  return [now, (async () => {
-    const [st, rows] = await Promise.all([req(a.url + '/api/status'), revealTokens(a)]);
-    const real = ((st.j.data || {}).server_address || '').replace(/\/+$/, '');
-    rows.first = real && real !== a.url ? addr(real) : null;
-    return rows.length ? rows : Object.assign([{ title: '这个账号还没有密钥' }], { first: rows.first });
-  })()];
+  const addr = (u, title = '调用地址') => ({ title, sub: u + '/v1', text: u + '/v1' });
+  const addrs = [addr((a || s).url), ...(s.type === 'panel' ? [] : s.alts || []).map(u => addr(u, '备用调用地址'))];
+  const manual = s.key ? [{ title: '密钥', sub: maskKey(s.key), text: s.key }] : [];
+  const secs = [
+    { name: '网址', now: [s.url, ...(s.alts || [])].map((u, i) => ({ title: i ? '备用网址' : '网址', sub: u, open: u })) },
+    { name: '调用地址', now: addrs, later: a && (async () => {
+      const real = (((await req(a.url + '/api/status')).j.data || {}).server_address || '').replace(/\/+$/, '');
+      return real && real !== a.url ? [addr(real), ...addrs.slice(1)] : addrs;
+    }) },
+    { name: '密钥', now: manual, empty: '还没有密钥', later:
+      s.type === 'imgsite' ? canLogin(s) && (async () => {
+        const { j } = await call(s, '/api/developer/keys');
+        return [...manual, ...(j.data || []).map(k => ({ title: k.name + (k.status === 'active' ? '' : '（不可用）'), sub: maskKey(k.key), text: k.key }))];
+      }) : a && (async () => [...manual, ...await revealTokens(a)]) },
+  ];
+  if (s.type === 'imgsite' ? canLogin(s) : a) secs.push({ name: '邀请', now: [], later: s.type === 'imgsite' ? async () => {
+    const { j } = await call(s, '/api/user/invite-rebate');
+    if (!j.code) throw new Error(j.error || '拿不到邀请码');
+    return [{ title: '邀请码', sub: j.code + '　已邀请 ' + j.invitee_count + ' 人', text: j.code }];
+  } : async () => {
+    const [aff, me, cur] = await Promise.all([call(a, '/api/user/aff'), call(a, '/api/user/self'), currency(a.url)]);
+    if (!aff.j.success || !aff.j.data) throw new Error(aff.j.message || '这个站没有邀请');
+    const u = me.j.data || {}, link = a.url + '/register?aff=' + aff.j.data;
+    return [{ title: '邀请链接', sub: link + '　已邀请 ' + (u.aff_count || 0) + ' 人 · 累计 ' + money(cur, u.aff_history_quota || 0), text: link }];
+  } });
+  return secs;
 }
-async function showInfo(s, kind, fresh) {
-  infoNow = { s, kind };
-  const id = s.id + kind;
-  $('keyTitle').textContent = s.name + (kind === 'keys' ? ' · 密钥' : ' · 邀请');
+const clearInfo = id => { for (const k of Object.keys(infoCache)) if (k.startsWith(id + '|')) delete infoCache[k]; };
+function showInfo(s, fresh) {
+  infoNow = s;
+  $('keyTitle').textContent = s.name;
   const body = document.createElement('div');
   body.className = 'body';
   body.id = 'keyBody';
-  if (!fresh && infoCache[id]) {
-    infoCache[id].forEach(r => body.appendChild(infoRow(r)));
-    $('keyBody').replaceWith(body);
-    return openSheet('keySheet');
+  for (const sec of infoSections(s)) {
+    const head = document.createElement('div');
+    head.className = 'gtitle';
+    head.textContent = sec.name;
+    const box = document.createElement('div');
+    body.append(head, box);
+    const id = s.id + '|' + sec.name;
+    const put = rows => box.replaceChildren(...(rows.length ? rows : [{ title: sec.empty || '没有' }]).map(infoRow));
+    if (!fresh && infoCache[id]) { put(infoCache[id]); continue; }
+    if (!sec.later) { put(sec.now); continue; }
+    box.replaceChildren(...sec.now.map(infoRow), infoRow({ title: '加载中…' }));
+    sec.later().then(rows => { infoCache[id] = rows; saveInfo(); put(rows); }, e => { box.lastChild.textContent = '加载失败：' + e.message; });
   }
-  const [now, later] = infoParts(s, kind);
-  now.forEach(r => body.appendChild(infoRow(r)));
-  const wait = later && body.appendChild(infoRow({ title: '加载中…' }));
   $('keyBody').replaceWith(body);
   openSheet('keySheet');
-  if (!later) return;
-  try {
-    const more = await later;
-    if (more.first) {
-      body.firstChild.replaceWith(infoRow(more.first));
-      now[0] = more.first;
-    }
-    wait.replaceWith(...more.map(infoRow));
-    infoCache[id] = [...now, ...more];
-    saveInfo();
-  } catch (e) { wait.textContent = '加载失败：' + e.message; }
 }
-$('keyRefresh').onclick = () => infoNow && showInfo(infoNow.s, infoNow.kind, true);
+$('keyRefresh').onclick = () => infoNow && showInfo(infoNow, true);
 
 // ---------- 全部签到 ----------
 let pending = [];
@@ -662,7 +658,7 @@ $('signAll').onclick = async () => {
         const got = await A[s.type].sign(s);
         await signed(s, got);
       }
-    } catch (e) { setCard(s, '出错', 'bad', e.message); }
+    } catch (e) { failed(s, e); }
   }));
   btn.disabled = false;
   btn.textContent = '全部签到';
@@ -766,8 +762,10 @@ async function loadMonitor(base) {
   const { j } = await req(base + '/api/model-status/embed/status/batch?window=1h', { method: 'POST', body: names });
   const map = {};
   for (const m of j.data || []) {
-    const last = m.slot_data[m.slot_data.length - 1] || {};
-    map[m.model_name] = { status: last.status || m.current_status, recent: last.success_rate, hour: m.success_rate };
+    const last = m.slot_data.findLast(x => x.sample_sufficient) || m.slot_data[m.slot_data.length - 1];
+    map[m.model_name] = last
+      ? { status: last.status, label: '最近 ' + Math.round((last.end_time - last.start_time) / 60) + ' 分钟', rate: last.success_rate }
+      : { status: m.current_status, label: '1 小时', rate: m.success_rate };
   }
   return map;
 }
@@ -800,8 +798,7 @@ function renderModels(list) {
     el.querySelector('.mp').textContent = m.price;
     if (m.mon) {
       el.querySelector('.dot').classList.add(m.mon.status);
-      el.querySelector('.ms span:last-child').textContent =
-        '最近 ' + (m.mon.recent === undefined ? '—' : m.mon.recent + '%') + ' · 1小时 ' + m.mon.hour + '%';
+      el.querySelector('.ms span:last-child').textContent = m.mon.label + ' 成功率 ' + (m.mon.rate == null ? '—' : m.mon.rate + '%');
     }
     body.appendChild(el);
   }
@@ -1091,8 +1088,7 @@ $('saveBtn').onclick = async () => {
   delete apiSites[s.id];
   delete topupUrl[s.id];
   delete modelCache[s.id];
-  delete infoCache[s.id + 'keys'];
-  delete infoCache[s.id + 'invite'];
+  clearInfo(s.id);
   saveInfo();
   if (!editing) {
     sites.push(s);
@@ -1115,8 +1111,7 @@ $('dlgNo').onclick = () => $('dialog').classList.remove('open');
 $('dlgYes').onclick = () => {
   sites = sites.filter(x => x !== editing);
   save();
-  delete infoCache[editing.id + 'keys'];
-  delete infoCache[editing.id + 'invite'];
+  clearInfo(editing.id);
   saveInfo();
   $('c_' + editing.id).remove();
   if (!sites.length) renderList(); else updateGroups();
@@ -1270,6 +1265,7 @@ $('importFile').onchange = async () => {
   } catch { return flash(btn, '密码不对'); }
   const have = new Set(sites.map(s => s.url));
   const added = list.filter(s => !have.has(s.url));
+  for (const s of added) if (sites.some(x => x.id === s.id)) s.id = 's' + Date.now() + Math.random().toString(36).slice(2, 6);
   const wasEmpty = !sites.length;
   sites.push(...added);
   save();
@@ -1289,7 +1285,7 @@ $('actBtn').onclick = async () => {
 };
 deviceCode().then(async code => {
   sites = await unsealed('sites', []);
-  Object.assign(infoCache, await unsealed('info', {}));
+  for (const [k, v] of Object.entries(await unsealed('info', {}))) if (k.includes('|')) infoCache[k] = v;
   save();
   saveInfo();
   $('devCode').textContent = code;

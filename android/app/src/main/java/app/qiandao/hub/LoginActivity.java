@@ -20,6 +20,7 @@ import com.getcapacitor.PluginCall;
 public class LoginActivity extends Activity {
     static PluginCall pending;
     private WebView web;
+    private TextView status;
     private Runnable slow;
 
     @Override
@@ -30,7 +31,7 @@ public class LoginActivity extends Activity {
         root.setFitsSystemWindows(true);
         Button done = new Button(this);
         done.setText("登录好了，完成");
-        TextView status = new TextView(this);
+        status = new TextView(this);
         status.setPadding(24, 4, 24, 8);
         status.setTextSize(12);
         web = new WebView(this);
@@ -49,11 +50,7 @@ public class LoginActivity extends Activity {
                 Uri url = request.getUrl();
                 String scheme = url.getScheme();
                 if ("http".equals(scheme) || "https".equals(scheme)) {
-                    String host = url.getHost();
-                    status.setText("正在打开 " + host + "…");
-                    web.removeCallbacks(slow);
-                    slow = () -> status.setText("15 秒还没连上 " + host + "，多半是网络或 VPN 的问题");
-                    web.postDelayed(slow, 15000);
+                    loading(url.getHost());
                     return false;
                 }
                 if ("intent".equals(scheme)) {
@@ -83,7 +80,9 @@ public class LoginActivity extends Activity {
                 status.setText("打不开 " + request.getUrl().getHost() + "：" + error.getDescription());
             }
         });
-        web.loadUrl(getIntent().getStringExtra("url"));
+        String start = getIntent().getStringExtra("url");
+        loading(Uri.parse(start).getHost());
+        web.loadUrl(start);
         done.setOnClickListener(v -> {
             if (!onSite()) {
                 Toast.makeText(this, "还没回到站点页面，登录完再点", Toast.LENGTH_SHORT).show();
@@ -106,6 +105,13 @@ public class LoginActivity extends Activity {
                 });
             });
         });
+    }
+
+    private void loading(String host) {
+        status.setText("正在打开 " + host + "…");
+        web.removeCallbacks(slow);
+        slow = () -> status.setText("15 秒还没连上 " + host + "，多半是网络或 VPN 的问题");
+        web.postDelayed(slow, 15000);
     }
 
     private static String host(String url) {
