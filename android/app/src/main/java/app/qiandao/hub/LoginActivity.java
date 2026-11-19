@@ -20,6 +20,7 @@ import com.getcapacitor.PluginCall;
 public class LoginActivity extends Activity {
     static PluginCall pending;
     private WebView web;
+    private Runnable slow;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -48,7 +49,11 @@ public class LoginActivity extends Activity {
                 Uri url = request.getUrl();
                 String scheme = url.getScheme();
                 if ("http".equals(scheme) || "https".equals(scheme)) {
-                    status.setText("正在打开 " + url.getHost() + "…");
+                    String host = url.getHost();
+                    status.setText("正在打开 " + host + "…");
+                    web.removeCallbacks(slow);
+                    slow = () -> status.setText("15 秒还没连上 " + host + "，多半是网络或 VPN 的问题");
+                    web.postDelayed(slow, 15000);
                     return false;
                 }
                 if ("intent".equals(scheme)) {
@@ -67,12 +72,15 @@ public class LoginActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
+                web.removeCallbacks(slow);
                 status.setText(Uri.parse(url).getHost());
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) status.setText("打不开 " + request.getUrl().getHost() + "：" + error.getDescription());
+                if (!request.isForMainFrame()) return;
+                web.removeCallbacks(slow);
+                status.setText("打不开 " + request.getUrl().getHost() + "：" + error.getDescription());
             }
         });
         web.loadUrl(getIntent().getStringExtra("url"));
