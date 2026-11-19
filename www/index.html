@@ -1127,6 +1127,7 @@ function applyTheme() {
   Capacitor.nativePromise('SystemBars', 'setStyle', { style: dark ? 'DARK' : 'LIGHT' }).catch(() => {});
 }
 window.onSystemDark = d => { sysDark = d; applyTheme(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => onSystemDark(e.matches));
 for (const b of $('theme').children) b.onclick = () => { localStorage.setItem('theme', b.dataset.t); applyTheme(); };
 applyTheme();
 async function checkUpdate() {
@@ -1145,6 +1146,7 @@ $('checkBtn').onclick = async () => {
   setTimeout(() => { btn.textContent = '检查更新'; btn.disabled = false; }, 1500);
 };
 $('updBtn').onclick = async () => {
+  if (Capacitor.getPlatform() === 'ios') return openBrowser('https://github.com/wsttdh666-cmd/yjqiandao/releases/latest');
   const btn = $('updBtn');
   btn.disabled = true;
   btn.textContent = '下载中…';
