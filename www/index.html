@@ -1168,10 +1168,14 @@ $('updBtn').onclick = async () => {
   const btn = $('updBtn');
   btn.disabled = true;
   btn.textContent = '下载中…';
+  const progress = Capacitor.addListener('AppTools', 'progress', p => {
+    btn.textContent = '下载中 ' + (p.total > 0 ? Math.floor(p.done * 100 / p.total) + '%' : (p.done / 1048576).toFixed(1) + 'M');
+  });
   try {
     await Capacitor.nativePromise('AppTools', 'install', { url: RELEASE + 'qiandao.apk' });
     btn.textContent = '更新';
   } catch { btn.textContent = '下载失败，重试'; }
+  progress.remove();
   btn.disabled = false;
 };
 function copyText(text, btn) {

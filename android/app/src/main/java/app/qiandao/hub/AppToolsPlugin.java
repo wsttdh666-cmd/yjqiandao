@@ -3,6 +3,7 @@ package app.qiandao.hub;
 import android.content.Intent;
 import android.net.Uri;
 import androidx.core.content.FileProvider;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -11,6 +12,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 
 @CapacitorPlugin(name = "AppTools")
@@ -21,10 +23,26 @@ public class AppToolsPlugin extends Plugin {
         new Thread(() -> {
             try {
                 File apk = new File(getContext().getCacheDir(), "update.apk");
-                try (InputStream in = new URL(url).openStream(); OutputStream out = new FileOutputStream(apk)) {
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(20000);
+                try (InputStream in = conn.getInputStream(); OutputStream out = new FileOutputStream(apk)) {
+                    long total = conn.getContentLengthLong(), done = 0;
+                    int last = -1;
                     byte[] buf = new byte[65536];
                     int n;
-                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        done += n;
+                        int step = (int) (total > 0 ? done * 100 / total : done >> 20);
+                        if (step != last) {
+                            last = step;
+                            JSObject p = new JSObject();
+                            p.put("done", done);
+                            p.put("total", total);
+                            notifyListeners("progress", p);
+                        }
+                    }
                 }
                 Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", apk);
                 Intent intent = new Intent(Intent.ACTION_VIEW)
