@@ -5,12 +5,14 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.CookieManager;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -27,8 +29,12 @@ public class LoginActivity extends Activity {
         root.setFitsSystemWindows(true);
         Button done = new Button(this);
         done.setText("登录好了，完成");
+        TextView status = new TextView(this);
+        status.setPadding(24, 4, 24, 8);
+        status.setTextSize(12);
         web = new WebView(this);
         root.addView(done, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(status, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         root.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
 
@@ -41,7 +47,10 @@ public class LoginActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri url = request.getUrl();
                 String scheme = url.getScheme();
-                if ("http".equals(scheme) || "https".equals(scheme)) return false;
+                if ("http".equals(scheme) || "https".equals(scheme)) {
+                    status.setText("正在打开 " + url.getHost() + "…");
+                    return false;
+                }
                 if ("intent".equals(scheme)) {
                     try {
                         String fallback = Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url");
@@ -54,6 +63,16 @@ public class LoginActivity extends Activity {
                 }
                 Toast.makeText(LoginActivity.this, "网页想跳到别的 App（" + scheme + "），已拦下", Toast.LENGTH_LONG).show();
                 return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                status.setText(Uri.parse(url).getHost());
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) status.setText("打不开 " + request.getUrl().getHost() + "：" + error.getDescription());
             }
         });
         web.loadUrl(getIntent().getStringExtra("url"));
