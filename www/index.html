@@ -149,9 +149,11 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <div id="alts"></div>
     <button class="add-alt" id="addAlt">＋ 添加备用网址</button>
     <div id="loginBox">
-      <label id="fUserLabel">账号</label><input class="field" id="fUser" autocapitalize="off">
-      <label>密码</label>
-      <div class="pw"><input class="field" id="fPass" type="password"><button class="eye" id="eye">👁</button></div>
+      <div id="credBox">
+        <label id="fUserLabel">账号</label><input class="field" id="fUser" autocapitalize="off">
+        <label>密码</label>
+        <div class="pw"><input class="field" id="fPass" type="password"><button class="eye" id="eye">👁</button></div>
+      </div>
       <div class="row-web"><button class="add-alt" id="webLogin">没有账号密码？在 App 里登录</button><span class="type-line" id="webState"></span></div>
     </div>
     <div id="keyBox"><label>密钥</label><input class="field" id="fKey" autocapitalize="off" autocomplete="off" placeholder="选填"></div>
@@ -311,6 +313,34 @@ const A = {
       return j.amount !== undefined ? '+' + j.amount + ' 点' : '';
     },
   },
+
+  wallet: {
+    headers: () => ({}),
+    async login() { throw new Error('点「编辑」在 App 里登录'); },
+    async wallet(s) {
+      const { status, j } = await call(s, '/api/me');
+      if (status !== 200) throw new Error(j.error || j.message || '查不到签到状态');
+      return j.wallet || j;
+    },
+    async status(s) {
+      const w = await A.wallet.wallet(s);
+      return { done: !w.dailyAvailable && !w.hourlyAvailable };
+    },
+    async balance(s) {
+      return '余额 ' + fmt((await A.wallet.wallet(s)).balance);
+    },
+    async sign(s) {
+      const w = await A.wallet.wallet(s);
+      let got = 0;
+      for (const kind of ['daily', 'hourly']) {
+        if (!w[kind + 'Available']) continue;
+        const { status, j } = await call(s, '/api/wallet/claim/' + kind, { method: 'POST' });
+        if (status !== 200) throw new Error(j.error || j.message || '领取失败');
+        got += j.claimed || 0;
+      }
+      return '+' + fmt(got);
+    },
+  },
 };
 
 const logins = new Map();
@@ -415,7 +445,7 @@ async function refreshSite(s) {
     } catch (e) { setCard(s, '出错', 'bad', e.message); }
     return;
   }
-  if (!canLogin(s)) return setCard(s, s.type === 'other' ? '需手动签' : '没填账号', '', '');
+  if (!canLogin(s)) return setCard(s, s.type === 'other' ? '需手动签' : '没登录', '', '');
   setCard(s, '查询中', 'wait');
   try {
     const st = await A[s.type].status(s);
@@ -753,7 +783,7 @@ $('modelRefresh').onclick = () => showModels(modelSite, true);
 
 // ---------- 添加 / 编辑站点 ----------
 let editing = null, found = null, detectTimer;
-const TYPE_INFO = { newapi: ['New API', '账号'], panel: ['签到面板', '账号'], imgsite: ['生图站', '邮箱'] };
+const TYPE_INFO = { newapi: ['New API', '账号'], panel: ['签到面板', '账号'], imgsite: ['生图站', '邮箱'], wallet: ['领取站', '账号'] };
 const normUrl = u => {
   u = u.trim();
   if (!u) return '';
@@ -766,16 +796,20 @@ async function detect(url) {
     if (st.success) return { type: 'newapi', checkin: (st.data || {}).checkin_enabled };
     if ((await req(url + '/api/checkin/status')).status === 401) return { type: 'panel' };
     if ((await req(url + '/api/user/checkin/status')).status === 401) return { type: 'imgsite' };
+    if ((await req(url + '/api/me')).status === 401 && (await req(url + '/api/wallet/claim/daily', { method: 'POST' })).status === 401) return { type: 'wallet' };
   } catch { throw new Error('连不上这个网址'); }
   throw new Error('认不出这个站');
 }
+const manualKey = t => t === 'other' || t === 'wallet';
 function showType(t) {
   $('fType').className = 'type-line';
   $('fType').textContent = t && t !== 'other' ? TYPE_INFO[t][0] : '';
   $('fUserLabel').textContent = t && t !== 'other' ? TYPE_INFO[t][1] : '账号';
   $('priceBox').hidden = t !== 'panel';
   $('loginBox').hidden = t === 'other';
-  $('keyBox').hidden = t !== 'other';
+  $('credBox').hidden = t === 'wallet';
+  $('webLogin').textContent = t === 'wallet' ? '在 App 里登录' : '没有账号密码？在 App 里登录';
+  $('keyBox').hidden = !manualKey(t);
 }
 let editKind = 'sign';
 function setKind(k) {
@@ -867,7 +901,7 @@ $('saveBtn').onclick = async () => {
     name: $('fName').value.trim() || new URL(url).hostname,
     user: type === 'other' ? '' : $('fUser').value.trim(),
     pass: type === 'other' ? '' : $('fPass').value,
-    key: type === 'other' ? $('fKey').value.trim() : '',
+    key: manualKey(type) ? $('fKey').value.trim() : '',
     price: type === 'panel' ? normUrl($('fPrice').value) : '',
     monitor: normUrl($('fMonitor').value),
   });
@@ -938,13 +972,13 @@ function unlock() {
   $('gate').classList.remove('open');
   renderList();
   for (const s of sites) {
-    if (A[s.type] || s.type === 'other') { refreshSite(s); continue; }
+    if (A[s.type]) { refreshSite(s); continue; }
     detect(s.url).then(r => {
       s.type = r.type;
       save();
       $('c_' + s.id).replaceWith(makeCard(s));
       refreshSite(s);
-    }, () => {});
+    }, () => refreshSite(s));
   }
   checkUpdate();
 }
