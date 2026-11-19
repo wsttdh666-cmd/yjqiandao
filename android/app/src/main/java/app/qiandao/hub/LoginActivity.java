@@ -1,6 +1,7 @@
 package app.qiandao.hub;
 
 import android.app.Activity;
+import android.graphics.Bitmap;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -65,6 +66,12 @@ public class LoginActivity extends Activity {
                 }
                 Toast.makeText(LoginActivity.this, "网页想跳到别的 App（" + scheme + "），已拦下", Toast.LENGTH_LONG).show();
                 return true;
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                web.removeCallbacks(slow);
+                status.setText("正在加载 " + Uri.parse(url).getHost() + "，网速慢要多等一会…");
             }
 
             @Override
