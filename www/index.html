@@ -60,6 +60,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .seg { display: flex; gap: 8px; }
 .seg button { flex: 1; padding: 10px 4px; border-radius: 10px; background: var(--line); font-size: 14px; }
 .seg button.on { background: var(--accent); color: #fff; }
+.seg[hidden], #modelTools[hidden] { display: none; }
 .alt-row { display: flex; gap: 8px; margin-top: 8px; }
 .alt-row .field { flex: 1; }
 .alt-row button { padding: 0 12px; border-radius: 10px; background: var(--line); color: var(--sub); font-size: 18px; }
@@ -104,6 +105,12 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .model .ms { font-size: 13px; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #c4c8d4; }
 .dot.green { background: #22b573; } .dot.cyan { background: #22a6c8; } .dot.yellow { background: #f5a524; } .dot.red { background: #e5484d; }
+.tabs { margin: 10px 16px 0; }
+.log { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.log .lt { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 14px; }
+.log .lt span:last-child { color: var(--sub); font-weight: 400; font-size: 12px; white-space: nowrap; }
+.log .ld { color: var(--sub); margin-top: 3px; word-break: break-all; }
+.log.bad .ld { color: var(--bad); }
 .keyrow { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .keyrow .main { flex: 1; min-width: 0; }
 .keyrow .kt { font-size: 14px; font-weight: 600; }
@@ -171,10 +178,14 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 
 <div class="sheet" id="modelSheet" style="height:88vh">
   <div class="head"><b id="modelTitle"></b><button class="small-btn" id="modelRefresh">刷新</button><button class="small-btn" data-close>收起</button></div>
-  <input class="field" id="search" placeholder="搜模型">
-  <div class="filters" id="filters"><button data-f="all" class="on">全部</button><button data-f="per">按次</button><button data-f="token">按量</button><button class="fav" id="favOnly">★ 收藏</button></div>
-  <div class="vendors" id="vendors"></div>
+  <div class="seg tabs" id="modelTabs"><button data-t="models" class="on">模型</button><button data-t="logs">日志</button></div>
+  <div id="modelTools">
+    <input class="field" id="search" placeholder="搜模型">
+    <div class="filters" id="filters"><button data-f="all" class="on">全部</button><button data-f="per">按次</button><button data-f="token">按量</button><button class="fav" id="favOnly">★ 收藏</button></div>
+    <div class="vendors" id="vendors"></div>
+  </div>
   <div class="body" id="modelBody"></div>
+  <div class="body" id="logBody" hidden></div>
 </div>
 
 <div class="sheet" id="keySheet">
@@ -715,6 +726,7 @@ function renderModels(list) {
     }
     body.appendChild(el);
   }
+  body.hidden = modelTab !== 'models';
   $('modelBody').replaceWith(body);
   renderVendors(list);
   filterModels();
@@ -730,8 +742,63 @@ function openModels(s) {
   modelSite = s;
   $('modelTitle').textContent = s.name;
   $('search').value = '';
+  $('modelTabs').hidden = !apiSite(s);
+  setModelTab('models');
   if (modelCache[s.id]) renderModels(modelCache[s.id]); else showModels(s);
   openSheet('modelSheet');
+}
+let modelTab = 'models';
+function setModelTab(t) {
+  modelTab = t;
+  for (const b of $('modelTabs').children) b.classList.toggle('on', b.dataset.t === t);
+  $('modelTools').hidden = $('modelBody').hidden = t !== 'models';
+  $('logBody').hidden = t !== 'logs';
+  if (t === 'logs') showLogs(modelSite);
+}
+for (const b of $('modelTabs').children) b.onclick = () => setModelTab(b.dataset.t);
+
+const logCache = {};
+const pad = n => String(n).padStart(2, '0');
+const when = ts => { const d = new Date(ts * 1000); return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+async function loadLogs(s) {
+  const a = apiSite(s);
+  const page = type => call(a, '/api/log/self/?p=1&page_size=30&type=' + type).then(r => {
+    if (!r.j.success) throw new Error(r.j.message || '拿不到日志');
+    return r.j.data.items || r.j.data || [];
+  });
+  const [used, failed, cur] = await Promise.all([page(2), page(5), currency(a.url)]);
+  return [...used, ...failed].sort((x, y) => y.created_at - x.created_at).slice(0, 30).map(l => l.type === 5
+    ? { bad: true, title: l.model_name || '出错', time: when(l.created_at), detail: l.content || '' }
+    : { title: l.model_name || '调用', time: when(l.created_at),
+        detail: '输入 ' + (l.prompt_tokens || 0) + ' · 输出 ' + (l.completion_tokens || 0) + ' · ' + (l.use_time || 0) + ' 秒 · ' + money(cur, l.quota || 0) + (l.token_name ? ' · ' + l.token_name : '') });
+}
+function renderLogs(list) {
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.id = 'logBody';
+  if (!list.length) body.innerHTML = '<div class="empty">最近没有调用记录</div>';
+  for (const l of list) {
+    const el = document.createElement('div');
+    el.className = 'log' + (l.bad ? ' bad' : '');
+    el.innerHTML = '<div class="lt"><span></span><span></span></div><div class="ld"></div>';
+    el.querySelector('.lt span').textContent = l.title;
+    el.querySelector('.lt span:last-child').textContent = l.time;
+    el.querySelector('.ld').textContent = l.detail;
+    body.appendChild(el);
+  }
+  body.hidden = modelTab !== 'logs';
+  $('logBody').replaceWith(body);
+}
+async function showLogs(s, fresh) {
+  if (!fresh && logCache[s.id]) return renderLogs(logCache[s.id]);
+  $('logBody').innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    logCache[s.id] = await loadLogs(s);
+    if (modelSite === s && modelTab === 'logs') renderLogs(logCache[s.id]);
+  } catch (e) {
+    $('logBody').innerHTML = '<div class="empty"></div>';
+    $('logBody').firstChild.textContent = '加载失败：' + e.message;
+  }
 }
 function filterModels() {
   const q = $('search').value.trim().toLowerCase();
@@ -779,7 +846,7 @@ function renderVendors(list) {
   $('vendors').replaceWith(box);
 }
 $('search').oninput = filterModels;
-$('modelRefresh').onclick = () => showModels(modelSite, true);
+$('modelRefresh').onclick = () => modelTab === 'logs' ? showLogs(modelSite, true) : showModels(modelSite, true);
 
 // ---------- 添加 / 编辑站点 ----------
 let editing = null, found = null, detectTimer;
