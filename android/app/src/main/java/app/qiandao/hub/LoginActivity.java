@@ -5,9 +5,7 @@ import android.graphics.Bitmap;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
-import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -47,16 +45,6 @@ public class LoginActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
-        web.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onConsoleMessage(ConsoleMessage message) {
-                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
-                    String text = message.message();
-                    status.setText(Uri.parse(web.getUrl()).getHost() + " 页面报错：" + (text.length() > 80 ? text.substring(0, 80) + "…" : text));
-                }
-                return false;
-            }
-        });
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
