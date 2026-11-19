@@ -39,33 +39,8 @@ jobs:
           path: |
             qiandao.apk
             version.txt
-  ipa:
-    runs-on: macos-latest
-    env:
-      VC: ${{ github.run_number }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - run: sed -i '' "s/const VER = 0;/const VER = $VC;/" www/index.html
-      - run: npm ci
-      - run: npx cap sync ios
-      - name: build
-        run: |
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" CURRENT_PROJECT_VERSION=$VC MARKETING_VERSION=$VC build > build.log 2>&1 \
-            || { echo "::error::$(grep -E 'error:' build.log | sort -u | head -c 1500 | tr '\n' ' ')"; exit 1; }
-          mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
-          zip -qr qiandao.ipa Payload
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ipa
-          path: qiandao.ipa
   release:
-    needs: [apk, ipa]
-    if: always() && needs.apk.result == 'success'
+    needs: apk
     runs-on: ubuntu-latest
     env:
       VC: ${{ github.run_number }}

@@ -370,7 +370,7 @@ async function call(s, path, opt = {}) {
   const go = () => req(s.url + path, { ...opt, headers: ad.headers(s) });
   let r = await go();
   if (r.status === 401) {
-    if (s.web && !s.pass) throw new Error('登录过期，点「编辑」重新登录');
+    if (s.web && !s.pass) throw new Error('登录过期');
     if (!logins.has(s)) logins.set(s, ad.login(s).finally(() => logins.delete(s)));
     await logins.get(s);
     r = await go();
@@ -443,6 +443,11 @@ function makeCard(s) {
   el.querySelector('.invite').hidden = !(s.type === 'imgsite' ? canLogin(s) : apiSite(s));
   el.querySelector('.invite').onclick = e => { e.stopPropagation(); showInfo(s, 'invite'); };
   el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
+  el.querySelector('.chip').onclick = e => {
+    if (e.target.textContent !== '去登录') return;
+    e.stopPropagation();
+    webLoginSite(s);
+  };
   el.onclick = () => pending.some(p => p.s === s) ? openCaptcha()
     : s.type === 'newapi' || (s.type === 'panel' && s.price) ? openModels(s) : openEdit(s);
   return el;
@@ -457,6 +462,23 @@ function setCard(s, chip, cls = '', info) {
   if (info !== undefined) el.querySelector('.info').textContent = info;
 }
 const canLogin = s => A[s.type] && (s.web || (s.user && s.pass));
+const failed = (s, e) => e.message === '登录过期' ? setCard(s, '去登录', 'wait', '登录过期') : setCard(s, '出错', 'bad', e.message);
+function applyWeb(s, store) {
+  let user = null;
+  try { user = JSON.parse(store.user || 'null'); } catch {}
+  Object.assign(s, { web: true, uid: user && user.id, token: store.token || store.checkin_token || '' });
+  delete s.access;
+}
+async function webLoginSite(s) {
+  const { storage, key } = await Capacitor.nativePromise('AppTools', 'webLogin', { url: s.url, scan: s.type === 'wallet' ? KEY_SCAN : undefined, optional: true });
+  const store = JSON.parse(JSON.parse(storage) || 'null');
+  if (!store) return;
+  applyWeb(s, store);
+  const k = JSON.parse(key || 'null');
+  if (k && !s.key) s.key = k;
+  save();
+  refreshSite(s);
+}
 
 async function keyBalance(s) {
   const { status, j } = await req(s.url + '/user/balance', { headers: { Authorization: 'Bearer ' + s.key } });
@@ -471,17 +493,17 @@ async function refreshSite(s) {
     try {
       setCard(s, '', '', await A[s.type].balance(s));
       if (!(s.id in topupUrl)) checkTopup(s);
-    } catch (e) { setCard(s, '出错', 'bad', e.message); }
+    } catch (e) { failed(s, e); }
     return;
   }
-  if (!canLogin(s)) return setCard(s, s.type === 'other' ? '需手动签' : '没登录', '', '');
+  if (!canLogin(s)) return setCard(s, s.type === 'other' ? '需手动签' : '去登录', s.type === 'other' ? '' : 'wait', '');
   setCard(s, '查询中', 'wait');
   try {
     const st = await A[s.type].status(s);
     setCard(s, st.done ? '已签 ✓' : '未签', st.done ? 'ok' : '', await A[s.type].balance(s));
     if (!(s.id in topupUrl)) checkTopup(s);
     return st;
-  } catch (e) { setCard(s, '出错', 'bad', e.message); }
+  } catch (e) { failed(s, e); }
 }
 
 // ---------- 充值、密钥、邀请 ----------
@@ -1036,12 +1058,8 @@ $('saveBtn').onclick = async () => {
     monitor: normUrl($('fMonitor').value),
   });
   if (loginChanged) { delete s.token; delete s.uid; delete s.access; }
-  if (webStore) {
-    let user = null;
-    try { user = JSON.parse(webStore.user || 'null'); } catch {}
-    Object.assign(s, { web: true, uid: user && user.id, token: webStore.token || webStore.checkin_token || '' });
-    delete s.access;
-  } else if (s.pass) s.web = false;
+  if (webStore) applyWeb(s, webStore);
+  else if (s.pass) s.web = false;
   delete apiSites[s.id];
   delete topupUrl[s.id];
   delete modelCache[s.id];

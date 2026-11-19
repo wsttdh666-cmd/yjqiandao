@@ -1,6 +1,7 @@
 package app.qiandao.hub;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.CookieManager;
@@ -38,8 +39,21 @@ public class LoginActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String scheme = request.getUrl().getScheme();
-                return !"http".equals(scheme) && !"https".equals(scheme);
+                Uri url = request.getUrl();
+                String scheme = url.getScheme();
+                if ("http".equals(scheme) || "https".equals(scheme)) return false;
+                if ("intent".equals(scheme)) {
+                    try {
+                        String fallback = Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url");
+                        if (fallback != null) {
+                            view.loadUrl(fallback);
+                            return true;
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                Toast.makeText(LoginActivity.this, "网页想跳到别的 App（" + scheme + "），已拦下", Toast.LENGTH_LONG).show();
+                return true;
             }
         });
         web.loadUrl(getIntent().getStringExtra("url"));
