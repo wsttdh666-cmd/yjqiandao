@@ -87,9 +87,10 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 
 .cap { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .cap:last-child { border-bottom: 0; }
-.cap .t { font-weight: 600; margin-bottom: 8px; }
+.cap .t { font-weight: 600; font-size: 16px; margin-bottom: 8px; }
+.cap .t span { color: var(--sub); font-weight: 400; font-size: 13px; margin-left: 6px; }
 .cap .row { display: flex; gap: 10px; align-items: center; }
-.cap img { height: 44px; min-width: 110px; border-radius: 8px; background: var(--line); }
+.cap img { height: 56px; min-width: 140px; border-radius: 8px; background: var(--line); }
 .cap .err { color: var(--bad); font-size: 13px; margin-top: 6px; }
 
 #search { margin: 10px 16px 0; width: calc(100% - 32px); }
@@ -622,22 +623,34 @@ function openCaptcha() {
       (p.needCode ? '<input class="field code" placeholder="签到码" style="margin-bottom:8px">' : '') +
       (p.cap ? '<div class="row"><img><input class="field ans" placeholder="验证码" autocapitalize="off"></div>' : '') +
       '<div class="err"></div>';
-    el.querySelector('.t').textContent = p.s.name;
+    el.querySelector('.t').innerHTML = '<b></b><span></span>';
+    el.querySelector('.t b').textContent = p.s.name;
+    el.querySelector('.t span').textContent = p.s.url.replace(/^https?:\/\//, '');
     if (p.needCode) el.querySelector('.code').value = p.s.code || '';
     if (p.cap) {
-      const img = el.querySelector('img');
+      const img = el.querySelector('img'), ans = el.querySelector('.ans');
       img.src = p.cap.img;
-      if (p.cap.numeric) el.querySelector('.ans').inputMode = 'numeric';
+      if (p.cap.numeric) ans.inputMode = 'numeric';
       img.onclick = () => newCaptcha(p);
+      ans.oninput = () => { if (p.s.capLen && ans.value.trim().length >= p.s.capLen) nextCapField(); };
+    }
+    for (const i of el.querySelectorAll('input')) {
+      i.enterKeyHint = 'next';
+      i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); nextCapField(); } };
     }
     p.el = el;
     body.appendChild(el);
   }
   $('capBody').replaceWith(body);
   openSheet('capSheet');
-  const first = body.querySelector('input');
-  if (first) first.focus();
+  focusEmptyCap();
 }
+const focusEmptyCap = () => {
+  const empty = [...$('capBody').querySelectorAll('input')].find(i => !i.value.trim());
+  if (empty) empty.focus();
+  return empty;
+};
+const nextCapField = () => focusEmptyCap() || $('capSubmit').click();
 
 async function newCaptcha(p) {
   try {
@@ -656,6 +669,7 @@ $('capSubmit').onclick = async () => {
     try {
       const got = await A[p.s.type].sign(p.s, { code, id: p.cap && p.cap.id, answer });
       p.done = true;
+      if (answer) { p.s.capLen = answer.length; save(); }
       p.el.remove();
       setCard(p.s, '已签 ✓', 'ok', '刚签到 ' + got);
     } catch (e) {
@@ -665,7 +679,7 @@ $('capSubmit').onclick = async () => {
   }));
   pending = pending.filter(p => !p.done);
   btn.disabled = false;
-  if (!pending.length) closeSheets();
+  if (!pending.length) closeSheets(); else focusEmptyCap();
 };
 
 // ---------- 模型、价格、成功率 ----------
