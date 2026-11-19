@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>一键签到</title>
+<style>
+:root { color-scheme: light; --top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); --bg: #f5f6fa; --card: #fff; --text: #1f2330; --sub: #8a90a2; --line: #eceef3; --accent: #5b6cff; --ok: #22b573; --bad: #e5484d; }
+html { background: var(--bg); min-height: 100%; }
+html, body { overflow-x: hidden; overscroll-behavior: none; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; background: var(--bg); color: var(--text); }
+button { font: inherit; border: 0; cursor: pointer; }
+input { font: inherit; }
+header { padding: calc(var(--top) + 14px) 18px 6px; display: flex; align-items: center; gap: 10px; }
+header h1 { flex: 1; }
+h1 { font-size: 22px; margin: 0; }
+.icon-btn { background: var(--card); width: 38px; height: 38px; border-radius: 12px; font-size: 22px; color: var(--accent); }
+#update { margin: 8px 18px 0; padding: 10px 14px; border-radius: 12px; background: #eef0ff; color: var(--accent); display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
+#update[hidden] { display: none; }
+#signAll { display: block; width: calc(100% - 36px); margin: 12px 18px 16px; padding: 16px; border-radius: 16px; background: var(--accent); color: #fff; font-size: 18px; font-weight: 600; transition: transform .1s, opacity .2s; }
+#signAll:active { transform: scale(.98); }
+#signAll:disabled { opacity: .6; }
+#list { padding: 0 18px calc(var(--bottom) + 24px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.card { background: var(--card); border-radius: 14px; padding: 14px 14px 12px 16px; }
+.card .row { display: flex; align-items: center; gap: 6px; }
+.card .row + .row { margin-top: 10px; }
+.card .link { min-width: 0; font-size: 13px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ver { text-align: center; color: var(--sub); font-size: 12px; padding: 0 0 calc(var(--bottom) + 16px); }
+.card .main { flex: 1; min-width: 0; }
+.card .name { font-weight: 600; }
+.card .info { font-size: 13px; color: var(--sub); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip { font-size: 12px; padding: 4px 9px; border-radius: 99px; background: var(--line); color: var(--sub); white-space: nowrap; }
+.chip.ok { background: #e3f7ee; color: var(--ok); }
+.chip.bad { background: #fde8e8; color: var(--bad); }
+.chip.wait { background: #eef0ff; color: var(--accent); }
+.small-btn { background: var(--line); color: var(--text); padding: 6px 10px; border-radius: 9px; font-size: 13px; transition: transform .1s, background .2s; }
+.small-btn:active { transform: scale(.94); }
+.small-btn.ok { background: #e3f7ee; color: var(--ok); }
+
+.mask { position: fixed; inset: 0; background: rgba(15,18,30,.35); opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 10; }
+.mask.open { opacity: 1; pointer-events: auto; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88vh; background: var(--card); border-radius: 18px 18px 0 0; transform: translateY(100%); transition: transform .16s ease-out; z-index: 11; display: flex; flex-direction: column; }
+.sheet.open { transform: none; }
+.sheet .head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.sheet .head b { flex: 1; font-size: 17px; }
+.sheet .body { overflow-y: auto; padding: 12px 16px; }
+.sheet .foot { display: flex; gap: 10px; padding: 10px 16px calc(var(--bottom) + 12px); border-top: 1px solid var(--line); }
+.foot button { flex: 1; padding: 13px; border-radius: 12px; background: var(--line); font-weight: 600; }
+.foot .primary { background: var(--accent); color: #fff; }
+label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; }
+.field { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafbfc; color: var(--text); outline: none; }
+.field:focus { border-color: var(--accent); }
+.pw { position: relative; }
+.pw .eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; padding: 6px; color: var(--sub); }
+.type-line { font-size: 13px; color: var(--accent); margin-top: 6px; min-height: 18px; }
+.type-line.bad { color: var(--bad); }
+.type-line:empty { display: none; }
+.seg { display: flex; gap: 8px; }
+.seg button { flex: 1; padding: 10px 4px; border-radius: 10px; background: var(--line); font-size: 14px; }
+.seg button.on { background: var(--accent); color: #fff; }
+.alt-row { display: flex; gap: 8px; margin-top: 8px; }
+.alt-row .field { flex: 1; }
+.alt-row button { padding: 0 12px; border-radius: 10px; background: var(--line); color: var(--sub); font-size: 18px; }
+.add-alt { margin-top: 8px; padding: 4px 0; background: none; color: var(--accent); font-size: 14px; }
+.row-web { display: flex; align-items: center; gap: 10px; }
+.row-web .type-line { margin-top: 8px; color: var(--ok); }
+.chip:empty { display: none; }
+.group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.group[hidden] { display: none; }
+.gtitle { font-size: 13px; color: var(--sub); margin: 0 2px -4px; }
+.card .links { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.ibtn { padding: 6px 9px; border-radius: 8px; background: var(--line); color: var(--text); font-size: 12px; flex: 0 0 auto; transition: transform .1s; }
+.ibtn:active { transform: scale(.92); }
+.ibtn[hidden] { display: none; }
+.danger { background: #fde8e8; color: var(--bad); padding: 6px 10px; border-radius: 9px; font-size: 13px; }
+
+.cap { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.cap:last-child { border-bottom: 0; }
+.cap .t { font-weight: 600; margin-bottom: 8px; }
+.cap .row { display: flex; gap: 10px; align-items: center; }
+.cap img { height: 44px; min-width: 110px; border-radius: 8px; background: var(--line); }
+.cap .err { color: var(--bad); font-size: 13px; margin-top: 6px; }
+
+#search { margin: 10px 16px 0; width: calc(100% - 32px); }
+.model { padding: 11px 0; border-bottom: 1px solid var(--line); }
+.model .mh { display: flex; align-items: flex-start; gap: 8px; }
+.model .mn { flex: 1; font-size: 14px; font-weight: 600; word-break: break-all; }
+.star { background: none; padding: 0 4px; font-size: 20px; line-height: 1; color: #c4c8d4; }
+.star.on { color: #f5a524; }
+.filters { display: flex; gap: 8px; margin: 10px 16px 0; }
+.filters button { flex: 1; padding: 8px 4px; border-radius: 10px; background: var(--line); font-size: 14px; }
+.filters button.on { background: var(--accent); color: #fff; }
+.filters .fav { flex: 0 0 auto; padding: 8px 12px; }
+.vendors { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 16px 0; }
+.vendors[hidden] { display: none; }
+.vendors button { padding: 5px 10px; border-radius: 99px; background: var(--line); font-size: 13px; }
+.vendors button.on { background: #eef0ff; color: var(--accent); font-weight: 600; }
+.model .mp { font-size: 13px; color: var(--sub); margin-top: 4px; }
+.model .ms { font-size: 13px; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #c4c8d4; }
+.dot.green { background: #22b573; } .dot.cyan { background: #22a6c8; } .dot.yellow { background: #f5a524; } .dot.red { background: #e5484d; }
+.keyrow { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.keyrow .main { flex: 1; min-width: 0; }
+.keyrow .kt { font-size: 14px; font-weight: 600; }
+.keyrow .ks { font-size: 13px; color: var(--sub); margin-top: 3px; word-break: break-all; }
+.empty { color: var(--sub); text-align: center; padding: 30px 0; }
+
+#gate { position: fixed; inset: 0; z-index: 30; background: var(--bg); padding: calc(var(--top) + 40px) 24px 24px; display: none; }
+#gate.open { display: block; }
+#gate h2 { margin: 0 0 12px; }
+.code-row { display: flex; align-items: center; justify-content: space-between; background: var(--card); border-radius: 12px; padding: 12px 14px; }
+.code-row b { font-size: 20px; letter-spacing: 1px; user-select: all; }
+#gate .err { color: var(--bad); font-size: 13px; min-height: 20px; margin-top: 6px; }
+#actBtn { width: 100%; padding: 14px; border-radius: 14px; background: var(--accent); color: #fff; font-weight: 600; font-size: 16px; }
+.hint { color: var(--sub); text-align: center; padding: 40px 0; }
+#dialog { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 20; background: rgba(15,18,30,.35); }
+#dialog.open { display: flex; }
+#dialog .box { background: var(--card); border-radius: 16px; width: 80%; max-width: 320px; padding: 18px; }
+#dialog .box p { margin: 0 0 16px; }
+#dialog .row { display: flex; gap: 10px; }
+#dialog .row button { flex: 1; padding: 11px; border-radius: 10px; background: var(--line); }
+#dialog .row .del { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<header><h1>一键签到</h1><button class="small-btn" id="checkBtn">检查更新</button><button class="icon-btn" id="addBtn">＋</button></header>
+<div id="update" hidden><span>有新版本</span><button class="small-btn" id="updBtn">更新</button></div>
+<button id="signAll">全部签到</button>
+<div id="list"></div>
+<div class="ver" id="ver"></div>
+
+<div class="mask" id="mask"></div>
+
+<div class="sheet" id="editSheet">
+  <div class="head"><b id="editTitle">添加站点</b><button class="danger" id="delBtn">删除</button></div>
+  <div class="body">
+    <label>名称</label><input class="field" id="fName" placeholder="选填">
+    <label>类型</label>
+    <div class="seg" id="kind"><button data-k="sign">签到</button><button data-k="view">仅查看</button></div>
+    <label>网址</label><input class="field" id="fUrl" inputmode="url" autocapitalize="off">
+    <div class="type-line" id="fType"></div>
+    <div id="alts"></div>
+    <button class="add-alt" id="addAlt">＋ 添加备用网址</button>
+    <div id="loginBox">
+      <label id="fUserLabel">账号</label><input class="field" id="fUser" autocapitalize="off">
+      <label>密码</label>
+      <div class="pw"><input class="field" id="fPass" type="password"><button class="eye" id="eye">👁</button></div>
+      <div class="row-web"><button class="add-alt" id="webLogin">没有账号密码？在 App 里登录</button><span class="type-line" id="webState"></span></div>
+    </div>
+    <div id="keyBox"><label>密钥</label><input class="field" id="fKey" autocapitalize="off" autocomplete="off" placeholder="选填"></div>
+    <label>模型监控网址</label><input class="field" id="fMonitor" inputmode="url" autocapitalize="off" placeholder="选填">
+    <div id="priceBox"><label>模型价格网址</label><input class="field" id="fPrice" inputmode="url" autocapitalize="off" placeholder="选填"></div>
+  </div>
+  <div class="foot"><button data-close>取消</button><button class="primary" id="saveBtn">保存</button></div>
+</div>
+
+<div class="sheet" id="capSheet">
+  <div class="head"><b>填验证码</b></div>
+  <div class="body" id="capBody"></div>
+  <div class="foot"><button data-close>取消</button><button class="primary" id="capSubmit">签到</button></div>
+</div>
+
+<div class="sheet" id="modelSheet" style="height:88vh">
+  <div class="head"><b id="modelTitle"></b><button class="small-btn" id="modelRefresh">刷新</button><button class="small-btn" data-close>收起</button></div>
+  <input class="field" id="search" placeholder="搜模型">
+  <div class="filters" id="filters"><button data-f="all" class="on">全部</button><button data-f="per">按次</button><button data-f="token">按量</button><button class="fav" id="favOnly">★ 收藏</button></div>
+  <div class="vendors" id="vendors"></div>
+  <div class="body" id="modelBody"></div>
+</div>
+
+<div class="sheet" id="keySheet">
+  <div class="head"><b id="keyTitle"></b><button class="small-btn" id="keyRefresh">刷新</button><button class="small-btn" data-close>收起</button></div>
+  <div class="body" id="keyBody"></div>
+</div>
+
+<div id="gate" class="open">
+  <h2>激活</h2>
+  <label>本机码</label>
+  <div class="code-row"><b id="devCode">读取中…</b><button class="small-btn" id="copyCode">复制</button></div>
+  <label>激活码</label>
+  <input class="field" id="actInput" autocapitalize="off" autocomplete="off">
+  <div class="err" id="actErr"></div>
+  <button id="actBtn">激活</button>
+</div>
+
+<div id="dialog"><div class="box"><p id="dialogText"></p><div class="row"><button id="dlgNo">取消</button><button class="del" id="dlgYes">删除</button></div></div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let sites = JSON.parse(localStorage.getItem('sites') || '[]');
+const save = () => localStorage.setItem('sites', JSON.stringify(sites));
+const trimUrl = u => u.trim().replace(/\/+$/, '');
+const fmt = n => String(Number(Number(n).toFixed(4)));
+
+async function req(url, { method = 'GET', headers = {}, body } = {}) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body && JSON.stringify(body) });
+  let j = {};
+  try { j = await r.json(); } catch {}
+  return { status: r.status, j };
+}
+
+// ---------- 各类站点的签到方式 ----------
+const currencyCache = {};
+async function currency(base) {
+  if (!currencyCache[base]) {
+    const d = (await req(base + '/api/status')).j.data || {};
+    const t = d.quota_display_type;
+    currencyCache[base] =
+      t === 'CNY' ? { sym: '¥', rate: d.usd_exchange_rate || 1, unit: d.quota_per_unit || 500000 } :
+      t === 'CUSTOM' ? { sym: d.custom_currency_symbol || '', rate: d.custom_currency_exchange_rate || 1, unit: d.quota_per_unit || 500000 } :
+      { sym: '$', rate: 1, unit: d.quota_per_unit || 500000 };
+  }
+  return currencyCache[base];
+}
+const money = (c, quota) => c.sym + fmt(quota / c.unit * c.rate);
+
+const A = {
+  newapi: {
+    headers: s => ({ 'New-Api-User': String(s.uid || ''), ...(s.access ? { Authorization: 'Bearer ' + s.access } : {}) }),
+    async login(s) {
+      const { j } = await req(s.url + '/api/user/login', { method: 'POST', body: { username: s.user, password: s.pass } });
+      if (!j.success) throw new Error(j.message || '登录失败');
+      if (j.data && j.data.require_2fa) throw new Error('这个账号开了两步验证，暂不支持');
+      s.uid = j.data.id ?? (j.data.user && j.data.user.id);
+      s.access = j.data.access_token || '';
+      save();
+    },
+    async status(s) {
+      const { j } = await call(s, '/api/user/checkin');
+      if (!j.success) throw new Error(j.message || '查不到签到状态');
+      const d = j.data;
+      if (!d.stats.checked_in_today && d.eligibility && !d.eligibility.can_checkin) throw new Error(d.eligibility.reason || '暂时不能签到');
+      return { done: d.stats.checked_in_today, captcha: d.captcha_enabled };
+    },
+    async balance(s) {
+      const { j } = await call(s, '/api/user/self');
+      return j.success ? '余额 ' + money(await currency(s.url), j.data.quota) : '';
+    },
+    async captcha(s) {
+      const { j } = await call(s, '/api/user/checkin/captcha');
+      if (!j.success) throw new Error(j.message || '拿不到验证码');
+      return { id: j.data.captcha_id, img: j.data.image_base64, numeric: true };
+    },
+    async sign(s, c) {
+      const q = c ? '?captcha_id=' + encodeURIComponent(c.id) + '&captcha_answer=' + encodeURIComponent(c.answer) : '';
+      const { j } = await call(s, '/api/user/checkin' + q, { method: 'POST' });
+      if (!j.success) throw new Error(j.message || '签到失败');
+      return '+' + money(await currency(s.url), j.data.quota_awarded);
+    },
+  },
+
+  panel: {
+    headers: s => ({ Authorization: 'Bearer ' + (s.token || '') }),
+    err: (j, fallback) => new Error(typeof j.detail === 'string' ? j.detail : fallback),
+    async login(s) {
+      const { j } = await req(s.url + '/api/auth/login', { method: 'POST', body: { username: s.user, password: s.pass } });
+      if (!j.token) throw A.panel.err(j, '登录失败');
+      s.token = j.token; save();
+    },
+    async status(s) {
+      const { status, j } = await call(s, '/api/checkin/status');
+      if (status !== 200) throw A.panel.err(j, '查不到签到状态');
+      if (!j.checked_today && j.verify && j.verify.enabled && j.verify.provider === 'cloudflare') throw new Error('这个站要人机验证，请去网页签');
+      return { done: j.checked_today, captcha: !!(j.verify && j.verify.enabled), code: j.code_enabled };
+    },
+    async balance(s) {
+      const { j } = await call(s, '/api/auth/me');
+      return j.quota !== undefined ? '余额 ¥' + fmt(j.quota) : '';
+    },
+    async captcha(s) {
+      const { j } = await call(s, '/api/captcha');
+      if (!j.captcha_id) throw A.panel.err(j, '拿不到验证码');
+      const img = j.image_url ? new URL(j.image_url, s.url).href : 'data:' + (j.content_type || 'image/png') + ';base64,' + j.image_base64;
+      return { id: j.captcha_id, img };
+    },
+    async sign(s, c = {}) {
+      const { status, j } = await call(s, '/api/checkin', { method: 'POST', body: { code: c.code || '', captcha_id: c.id || '', captcha_answer: c.answer || '', cf_token: '' } });
+      if (status !== 200) throw A.panel.err(j, '签到失败');
+      if (c.code) { s.code = c.code; save(); }
+      return '+¥' + fmt(j.reward);
+    },
+  },
+
+  imgsite: {
+    headers: s => ({ Authorization: 'Bearer ' + (s.token || '') }),
+    async login(s) {
+      const { j } = await req(s.url + '/api/login', { method: 'POST', body: { email: s.user, password: s.pass, remember_me: 30 } });
+      if (!j.token) throw new Error(j.error || j.message || '登录失败');
+      s.token = j.token; save();
+    },
+    async status(s) {
+      const { status, j } = await call(s, '/api/user/checkin/status');
+      if (status !== 200) throw new Error(j.error || j.message || '查不到签到状态');
+      const today = j.days.find(d => d.day === j.current_day);
+      return { done: today.checked };
+    },
+    async balance(s) {
+      const { j } = await call(s, '/api/user/profile');
+      return j.user ? '剩余 ' + j.user.points + ' 点' : '';
+    },
+    async sign(s) {
+      const { status, j } = await call(s, '/api/user/checkin', { method: 'POST' });
+      if (status !== 200) throw new Error(j.error || j.message || '签到失败');
+      return j.amount !== undefined ? '+' + j.amount + ' 点' : '';
+    },
+  },
+};
+
+const logins = new Map();
+async function call(s, path, opt = {}) {
+  const ad = A[s.type];
+  const go = () => req(s.url + path, { ...opt, headers: ad.headers(s) });
+  let r = await go();
+  if (r.status === 401) {
+    if (s.web && !s.pass) throw new Error('登录过期，点「编辑」重新登录');
+    if (!logins.has(s)) logins.set(s, ad.login(s).finally(() => logins.delete(s)));
+    await logins.get(s);
+    r = await go();
+  }
+  return r;
+}
+
+// ---------- 站点列表 ----------
+const groupOf = s => $(s.view ? 'gView' : 'gSign');
+function updateGroups() {
+  for (const g of ['gSign', 'gView']) if ($(g)) $(g).hidden = $(g).children.length === 1;
+}
+function renderList() {
+  const box = document.createElement('div');
+  box.id = 'list';
+  if (!sites.length) box.innerHTML = '<div class="hint">点右上角 ＋ 添加站点</div>';
+  else {
+    box.innerHTML = '<div class="group" id="gSign"><div class="gtitle">签到</div></div><div class="group" id="gView"><div class="gtitle">仅查看</div></div>';
+    for (const s of sites) box.querySelector(s.view ? '#gView' : '#gSign').appendChild(makeCard(s));
+  }
+  $('list').replaceWith(box);
+  updateGroups();
+}
+function makeCard(s) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.id = 'c_' + s.id;
+  el.innerHTML = '<div class="row"><div class="main"><div class="name"></div><div class="info"></div></div><span class="chip"></span></div>' +
+    '<div class="row"><div class="links"></div><button class="ibtn topup" hidden>充值</button><button class="ibtn keys">密钥</button><button class="ibtn invite">邀请</button><button class="ibtn edit">编辑</button></div>';
+  el.querySelector('.name').textContent = s.name;
+  for (const u of [s.url, ...(s.alts || [])]) {
+    const a = document.createElement('span');
+    a.className = 'link';
+    a.textContent = u.replace(/^https?:\/\//, '') + ' ↗';
+    a.onclick = e => { e.stopPropagation(); openBrowser(u); };
+    el.querySelector('.links').appendChild(a);
+  }
+  el.querySelector('.topup').hidden = !topupUrl[s.id];
+  el.querySelector('.topup').onclick = e => { e.stopPropagation(); openBrowser(topupUrl[s.id]); };
+  el.querySelector('.keys').onclick = e => { e.stopPropagation(); showInfo(s, 'keys'); };
+  el.querySelector('.invite').hidden = !(s.type === 'imgsite' ? canLogin(s) : apiSite(s));
+  el.querySelector('.invite').onclick = e => { e.stopPropagation(); showInfo(s, 'invite'); };
+  el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
+  el.onclick = () => (s.type === 'imgsite' || s.type === 'other' ? openEdit(s) : openModels(s));
+  return el;
+}
+const openBrowser = url => Capacitor.nativePromise('AppTools', 'open', { url });
+function setCard(s, chip, cls = '', info) {
+  const el = $('c_' + s.id);
+  if (!el) return;
+  const c = el.querySelector('.chip');
+  c.textContent = chip;
+  c.className = 'chip ' + cls;
+  if (info !== undefined) el.querySelector('.info').textContent = info;
+}
+const canLogin = s => A[s.type] && (s.web || (s.user && s.pass));
+
+async function refreshSite(s) {
+  if (s.view) {
+    if (!canLogin(s)) return;
+    try {
+      setCard(s, '', '', await A[s.type].balance(s));
+      if (!(s.id in topupUrl)) checkTopup(s);
+    } catch (e) { setCard(s, '出错', 'bad', e.message); }
+    return;
+  }
+  if (!canLogin(s)) return setCard(s, '没填账号', '', '');
+  setCard(s, '查询中', 'wait');
+  try {
+    const st = await A[s.type].status(s);
+    setCard(s, st.done ? '已签 ✓' : '未签', st.done ? 'ok' : '', await A[s.type].balance(s));
+    if (!(s.id in topupUrl)) checkTopup(s);
+    return st;
+  } catch (e) { setCard(s, '出错', 'bad', e.message); }
+}
+
+// ---------- 充值、密钥、邀请 ----------
+const apiSites = {}, topupUrl = {};
+function apiSite(s) {
+  if (s.type === 'newapi') return canLogin(s) ? s : null;
+  if (s.type !== 'panel' || !s.price || !s.pass) return null;
+  return apiSites[s.id] ||= { id: s.id + '_api', type: 'newapi', url: s.price, user: s.user, pass: s.pass };
+}
+async function checkTopup(s) {
+  topupUrl[s.id] = s.type === 'imgsite' ? s.url + '/recharge' : '';
+  const a = apiSite(s);
+  if (a) {
+    try {
+      const { j } = await call(a, '/api/user/topup/info');
+      const d = j.success && j.data;
+      const on = d && Object.entries(d).some(([k, v]) => /^enable_.*topup$/.test(k) && v === true);
+      topupUrl[s.id] = (d && d.topup_link) || (on ? a.url + '/console/topup' : '');
+    } catch { return; }
+  }
+  const el = $('c_' + s.id);
+  if (el) el.querySelector('.topup').hidden = !topupUrl[s.id];
+}
+const infoCache = JSON.parse(localStorage.getItem('info') || '{}');
+const saveInfo = () => localStorage.setItem('info', JSON.stringify(infoCache));
+let infoNow = null;
+const maskKey = k => k.slice(0, 7) + '……' + k.slice(-4);
+function infoRow(r) {
+  const el = document.createElement('div');
+  if (!r.text) {
+    el.className = 'empty';
+    el.textContent = r.title;
+    return el;
+  }
+  el.className = 'keyrow';
+  el.innerHTML = '<div class="main"><div class="kt"></div><div class="ks"></div></div><button class="small-btn">复制</button>';
+  el.querySelector('.kt').textContent = r.title;
+  el.querySelector('.ks').textContent = r.sub;
+  el.querySelector('button').onclick = e => copyText(r.text, e.target);
+  return el;
+}
+async function revealTokens(a) {
+  const list = await call(a, '/api/token/?p=1&size=100');
+  if (!list.j.success) throw new Error(list.j.message || '拿不到密钥');
+  const tokens = list.j.data.items || list.j.data;
+  const full = await Promise.all(tokens.map(async t => t.key.includes('*')
+    ? (await call(a, '/api/token/' + t.id + '/key', { method: 'POST' })).j.data.key
+    : t.key));
+  return tokens.map((t, i) => ({ title: t.name + (t.status === 1 ? '' : '（不可用）'), sub: maskKey('sk-' + full[i]), text: 'sk-' + full[i] }));
+}
+function infoParts(s, kind) {
+  const a = apiSite(s);
+  const addr = u => ({ title: '调用地址', sub: u + '/v1', text: u + '/v1' });
+  if (kind === 'invite') {
+    if (s.type === 'imgsite') return [[], (async () => {
+      const { j } = await call(s, '/api/user/invite-rebate');
+      if (!j.code) throw new Error(j.error || '拿不到邀请码');
+      return [{ title: '邀请码', sub: j.code + '　已邀请 ' + j.invitee_count + ' 人', text: j.code }];
+    })()];
+    return [[], (async () => {
+      const [aff, me, cur] = await Promise.all([call(a, '/api/user/aff'), call(a, '/api/user/self'), currency(a.url)]);
+      if (!aff.j.success || !aff.j.data) throw new Error(aff.j.message || '这个站没有邀请');
+      const u = me.j.data || {}, link = a.url + '/register?aff=' + aff.j.data;
+      return [{ title: '邀请链接', sub: link + '　已邀请 ' + (u.aff_count || 0) + ' 人 · 累计 ' + money(cur, u.aff_history_quota || 0), text: link }];
+    })()];
+  }
+  const now = [addr((a || s).url)];
+  for (const u of s.type === 'panel' ? [] : s.alts || []) now.push({ ...addr(u), title: '备用调用地址' });
+  if (s.key) now.push({ title: '密钥', sub: maskKey(s.key), text: s.key });
+  if (s.type === 'imgsite') return [now, canLogin(s) ? (async () => {
+    const { j } = await call(s, '/api/developer/keys');
+    return (j.data || []).map(k => ({ title: k.name + (k.status === 'active' ? '' : '（不可用）'), sub: maskKey(k.key), text: k.key }));
+  })() : null];
+  if (!a) return [now, null];
+  return [now, (async () => {
+    const [st, rows] = await Promise.all([req(a.url + '/api/status'), revealTokens(a)]);
+    const real = ((st.j.data || {}).server_address || '').replace(/\/+$/, '');
+    rows.first = real && real !== a.url ? addr(real) : null;
+    return rows.length ? rows : Object.assign([{ title: '这个账号还没有密钥' }], { first: rows.first });
+  })()];
+}
+async function showInfo(s, kind, fresh) {
+  infoNow = { s, kind };
+  const id = s.id + kind;
+  $('keyTitle').textContent = s.name + (kind === 'keys' ? ' · 密钥' : ' · 邀请');
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.id = 'keyBody';
+  if (!fresh && infoCache[id]) {
+    infoCache[id].forEach(r => body.appendChild(infoRow(r)));
+    $('keyBody').replaceWith(body);
+    return openSheet('keySheet');
+  }
+  const [now, later] = infoParts(s, kind);
+  now.forEach(r => body.appendChild(infoRow(r)));
+  const wait = later && body.appendChild(infoRow({ title: '加载中…' }));
+  $('keyBody').replaceWith(body);
+  openSheet('keySheet');
+  if (!later) return;
+  try {
+    const more = await later;
+    if (more.first) {
+      body.firstChild.replaceWith(infoRow(more.first));
+      now[0] = more.first;
+    }
+    wait.replaceWith(...more.map(infoRow));
+    infoCache[id] = [...now, ...more];
+    saveInfo();
+  } catch (e) { wait.textContent = '加载失败：' + e.message; }
+}
+$('keyRefresh').onclick = () => infoNow && showInfo(infoNow.s, infoNow.kind, true);
+
+// ---------- 全部签到 ----------
+let pending = [];
+$('signAll').onclick = async () => {
+  const btn = $('signAll');
+  btn.disabled = true;
+  btn.textContent = '签到中…';
+  pending = [];
+  await Promise.all(sites.filter(s => !s.view).map(async s => {
+    const st = await refreshSite(s);
+    if (!st || st.done) return;
+    try {
+      if (st.captcha || st.code) {
+        pending.push({ s, needCode: st.code, cap: st.captcha ? await A[s.type].captcha(s) : null });
+        setCard(s, '待填验证码', 'wait');
+      } else {
+        const got = await A[s.type].sign(s);
+        setCard(s, '已签 ✓', 'ok', '刚签到 ' + got);
+      }
+    } catch (e) { setCard(s, '出错', 'bad', e.message); }
+  }));
+  btn.disabled = false;
+  btn.textContent = '全部签到';
+  if (pending.length) openCaptcha();
+};
+
+function openCaptcha() {
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.id = 'capBody';
+  for (const p of pending) {
+    const el = document.createElement('div');
+    el.className = 'cap';
+    el.innerHTML = '<div class="t"></div>' +
+      (p.needCode ? '<input class="field code" placeholder="签到码" style="margin-bottom:8px">' : '') +
+      (p.cap ? '<div class="row"><img><input class="field ans" placeholder="验证码" autocapitalize="off"></div>' : '') +
+      '<div class="err"></div>';
+    el.querySelector('.t').textContent = p.s.name;
+    if (p.needCode) el.querySelector('.code').value = p.s.code || '';
+    if (p.cap) {
+      const img = el.querySelector('img');
+      img.src = p.cap.img;
+      if (p.cap.numeric) el.querySelector('.ans').inputMode = 'numeric';
+      img.onclick = () => newCaptcha(p);
+    }
+    p.el = el;
+    body.appendChild(el);
+  }
+  $('capBody').replaceWith(body);
+  openSheet('capSheet');
+  const first = body.querySelector('input');
+  if (first) first.focus();
+}
+
+async function newCaptcha(p) {
+  try {
+    p.cap = await A[p.s.type].captcha(p.s);
+    p.el.querySelector('img').src = p.cap.img;
+    p.el.querySelector('.ans').value = '';
+  } catch (e) { p.el.querySelector('.err').textContent = e.message; }
+}
+
+$('capSubmit').onclick = async () => {
+  const btn = $('capSubmit');
+  btn.disabled = true;
+  await Promise.all(pending.map(async p => {
+    const code = p.needCode ? p.el.querySelector('.code').value.trim() : '';
+    const answer = p.cap ? p.el.querySelector('.ans').value.trim() : '';
+    try {
+      const got = await A[p.s.type].sign(p.s, { code, id: p.cap && p.cap.id, answer });
+      p.done = true;
+      p.el.remove();
+      setCard(p.s, '已签 ✓', 'ok', '刚签到 ' + got);
+    } catch (e) {
+      p.el.querySelector('.err').textContent = e.message;
+      if (p.cap) await newCaptcha(p);
+    }
+  }));
+  pending = pending.filter(p => !p.done);
+  btn.disabled = false;
+  if (!pending.length) closeSheets();
+};
+
+// ---------- 模型、价格、成功率 ----------
+let modelSite = null, billing = 'all', favOnly = false, vendor = '';
+const favs = new Set(JSON.parse(localStorage.getItem('favs') || '[]'));
+const modelCache = {};
+async function loadModels(s) {
+  const base = trimUrl(s.price || (s.type === 'newapi' ? s.url : ''));
+  if (!base) return [];
+  const [pricing, cur, mon] = await Promise.all([
+    req(base + '/api/pricing'),
+    currency(base),
+    s.monitor ? loadMonitor(trimUrl(s.monitor)) : {},
+  ]);
+  const vendorName = Object.fromEntries((pricing.j.vendors || []).map(v => [v.id, v.name]));
+  const list = (pricing.j.data || []).map(m => ({
+    vendor: vendorName[m.vendor_id] || '',
+    name: m.model_name,
+    per: m.quota_type === 1,
+    price: m.quota_type === 1
+      ? cur.sym + fmt(m.model_price * cur.rate) + ' / 次'
+      : '输入 ' + cur.sym + fmt(m.model_ratio * 2 * cur.rate) + ' · 输出 ' + cur.sym + fmt(m.model_ratio * 2 * cur.rate * (m.completion_ratio || 1)) + ' / 百万',
+    mon: mon[m.model_name],
+  }));
+  return list.sort((a, b) => !!b.mon - !!a.mon);
+}
+async function loadMonitor(base) {
+  const names = (await req(base + '/api/model-status/embed/config/selected')).j.data || [];
+  const { j } = await req(base + '/api/model-status/embed/status/batch?window=1h', { method: 'POST', body: names });
+  const map = {};
+  for (const m of j.data || []) {
+    const last = m.slot_data[m.slot_data.length - 1] || {};
+    map[m.model_name] = { status: last.status || m.current_status, recent: last.success_rate, hour: m.success_rate };
+  }
+  return map;
+}
+function renderModels(list) {
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.id = 'modelBody';
+  body.innerHTML = '<div class="empty" id="noMatch" hidden></div>';
+  body.firstChild.textContent = list.length ? '没有符合的模型' : '这个站没有模型价格';
+  for (const m of list) {
+    const el = document.createElement('div');
+    const key = modelSite.id + '|' + m.name;
+    el.className = 'model';
+    el.dataset.n = m.name.toLowerCase();
+    el.dataset.t = m.per ? 'per' : 'token';
+    el.dataset.v = m.vendor;
+    el.dataset.k = key;
+    el.innerHTML = '<div class="mh"><div class="mn"></div><button class="star">☆</button></div><div class="mp"></div>' + (m.mon ? '<div class="ms"><span class="dot"></span><span></span></div>' : '');
+    el.querySelector('.mn').textContent = m.name;
+    const star = el.querySelector('.star');
+    if (favs.has(key)) { star.classList.add('on'); star.textContent = '★'; }
+    star.onclick = () => {
+      const on = !favs.has(key);
+      on ? favs.add(key) : favs.delete(key);
+      localStorage.setItem('favs', JSON.stringify([...favs]));
+      star.classList.toggle('on', on);
+      star.textContent = on ? '★' : '☆';
+      if (favOnly) filterModels();
+    };
+    el.querySelector('.mp').textContent = m.price;
+    if (m.mon) {
+      el.querySelector('.dot').classList.add(m.mon.status);
+      el.querySelector('.ms span:last-child').textContent =
+        '最近 ' + (m.mon.recent === undefined ? '—' : m.mon.recent + '%') + ' · 1小时 ' + m.mon.hour + '%';
+    }
+    body.appendChild(el);
+  }
+  $('modelBody').replaceWith(body);
+  renderVendors(list);
+  filterModels();
+}
+async function showModels(s, fresh) {
+  $('modelBody').innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    if (fresh || !modelCache[s.id]) modelCache[s.id] = await loadModels(s);
+    if (modelSite === s) renderModels(modelCache[s.id]);
+  } catch (e) { $('modelBody').innerHTML = '<div class="empty"></div>'; $('modelBody').firstChild.textContent = '加载失败：' + e.message; }
+}
+function openModels(s) {
+  modelSite = s;
+  $('modelTitle').textContent = s.name;
+  $('search').value = '';
+  if (modelCache[s.id]) renderModels(modelCache[s.id]); else showModels(s);
+  openSheet('modelSheet');
+}
+function filterModels() {
+  const q = $('search').value.trim().toLowerCase();
+  let shown = 0;
+  for (const el of $('modelBody').children) {
+    if (!el.dataset.n) continue;
+    el.hidden = !el.dataset.n.includes(q) ||
+      (billing !== 'all' && el.dataset.t !== billing) ||
+      (favOnly && !favs.has(el.dataset.k)) ||
+      (vendor && el.dataset.v !== vendor);
+    if (!el.hidden) shown++;
+  }
+  if ($('noMatch')) $('noMatch').hidden = shown > 0;
+}
+for (const b of $('filters').querySelectorAll('[data-f]')) b.onclick = () => {
+  billing = b.dataset.f;
+  for (const x of $('filters').querySelectorAll('[data-f]')) x.classList.toggle('on', x === b);
+  filterModels();
+};
+$('favOnly').onclick = () => {
+  favOnly = !favOnly;
+  $('favOnly').classList.toggle('on', favOnly);
+  filterModels();
+};
+function renderVendors(list) {
+  const count = {};
+  for (const m of list) if (m.vendor) count[m.vendor] = (count[m.vendor] || 0) + 1;
+  const names = Object.keys(count).sort((a, b) => count[b] - count[a]);
+  if (!names.includes(vendor)) vendor = '';
+  const box = document.createElement('div');
+  box.className = 'vendors';
+  box.id = 'vendors';
+  box.hidden = !names.length;
+  for (const n of ['', ...names]) {
+    const b = document.createElement('button');
+    b.textContent = n || '全部';
+    b.classList.toggle('on', n === vendor);
+    b.onclick = () => {
+      vendor = n;
+      for (const x of box.children) x.classList.toggle('on', x === b);
+      filterModels();
+    };
+    box.appendChild(b);
+  }
+  $('vendors').replaceWith(box);
+}
+$('search').oninput = filterModels;
+$('modelRefresh').onclick = () => showModels(modelSite, true);
+
+// ---------- 添加 / 编辑站点 ----------
+let editing = null, found = null, detectTimer;
+const TYPE_INFO = { newapi: ['New API', '账号'], panel: ['签到面板', '账号'], imgsite: ['生图站', '邮箱'] };
+const normUrl = u => {
+  u = u.trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { return new URL(u).origin; } catch { return u; }
+};
+async function detect(url) {
+  try {
+    const st = (await req(url + '/api/status')).j;
+    if (st.success) return { type: 'newapi', checkin: (st.data || {}).checkin_enabled };
+    if ((await req(url + '/api/checkin/status')).status === 401) return { type: 'panel' };
+    if ((await req(url + '/api/user/checkin/status')).status === 401) return { type: 'imgsite' };
+  } catch { throw new Error('连不上这个网址'); }
+  throw new Error('认不出这个站');
+}
+function showType(t) {
+  $('fType').className = 'type-line';
+  $('fType').textContent = t && t !== 'other' ? TYPE_INFO[t][0] : '';
+  $('fUserLabel').textContent = t && t !== 'other' ? TYPE_INFO[t][1] : '账号';
+  $('priceBox').hidden = t !== 'panel';
+  $('loginBox').hidden = t === 'other';
+  $('keyBox').hidden = t !== 'other';
+}
+let editKind = 'sign';
+function setKind(k) {
+  editKind = k;
+  for (const b of $('kind').children) b.classList.toggle('on', b.dataset.k === k);
+  $('fUser').placeholder = $('fPass').placeholder = k === 'view' ? '选填' : '';
+}
+for (const b of $('kind').children) b.onclick = () => setKind(b.dataset.k);
+function checkUrl() {
+  const url = normUrl($('fUrl').value);
+  if (found && found.url === url) return found.p;
+  const p = detect(url);
+  found = { url, p };
+  $('fType').className = 'type-line';
+  $('fType').textContent = '识别中…';
+  p.then(r => {
+    if (!found || found.p !== p) return;
+    showType(r.type);
+    if (!editing && r.checkin === false) setKind('view');
+  }, () => {
+    if (!found || found.p !== p) return;
+    showType('other');
+    setKind('view');
+  });
+  return p;
+}
+$('fUrl').oninput = () => {
+  clearTimeout(detectTimer);
+  if (!$('fUrl').value.trim()) { found = null; return showType(null); }
+  detectTimer = setTimeout(checkUrl, 600);
+};
+function addAltRow(value) {
+  const row = document.createElement('div');
+  row.className = 'alt-row';
+  row.innerHTML = '<input class="field" inputmode="url" autocapitalize="off" placeholder="备用网址"><button>×</button>';
+  row.querySelector('input').value = value;
+  row.querySelector('button').onclick = () => row.remove();
+  $('alts').appendChild(row);
+  return row;
+}
+$('addAlt').onclick = () => addAltRow('').querySelector('input').focus();
+let webStore = null;
+$('webLogin').onclick = async () => {
+  const url = normUrl($('fUrl').value);
+  if (!url) return $('fUrl').focus();
+  const { storage } = await Capacitor.nativePromise('AppTools', 'webLogin', { url });
+  const store = JSON.parse(JSON.parse(storage) || 'null');
+  if (!store) return;
+  webStore = store;
+  $('webState').textContent = '已登录 ✓';
+};
+function openEdit(s) {
+  editing = s;
+  found = s ? { url: s.url, p: Promise.resolve({ type: s.type }) } : null;
+  $('editTitle').textContent = s ? '编辑站点' : '添加站点';
+  $('delBtn').hidden = !s;
+  showType(s ? s.type : null);
+  setKind(s && s.view ? 'view' : 'sign');
+  $('fName').value = s ? s.name : '';
+  $('fUrl').value = s ? s.url : '';
+  $('alts').replaceChildren();
+  for (const u of (s && s.alts) || []) addAltRow(u);
+  $('fUser').value = s ? s.user : '';
+  $('fPass').value = s ? s.pass : '';
+  $('fPass').type = 'password';
+  $('fKey').value = (s && (s.key || (s.type === 'other' ? s.user : ''))) || '';
+  webStore = null;
+  $('webState').textContent = s && s.web ? '已登录 ✓' : '';
+  $('fPrice').value = (s && s.price) || '';
+  $('fMonitor').value = (s && s.monitor) || '';
+  openSheet('editSheet');
+}
+$('addBtn').onclick = () => openEdit(null);
+$('eye').onclick = () => { $('fPass').type = $('fPass').type === 'password' ? 'text' : 'password'; };
+$('saveBtn').onclick = async () => {
+  const url = normUrl($('fUrl').value);
+  if (!url) return $('fUrl').focus();
+  const view = editKind === 'view';
+  clearTimeout(detectTimer);
+  $('saveBtn').disabled = true;
+  const det = await checkUrl().catch(() => null);
+  $('saveBtn').disabled = false;
+  const type = det ? det.type : 'other';
+  const s = editing || { id: 's' + Date.now() };
+  const loginChanged = s.url !== url || s.user !== $('fUser').value.trim() || s.pass !== $('fPass').value;
+  Object.assign(s, {
+    type, url, view: view || type === 'other',
+    alts: [...$('alts').querySelectorAll('input')].map(x => normUrl(x.value)).filter(Boolean),
+    name: $('fName').value.trim() || new URL(url).hostname,
+    user: type === 'other' ? '' : $('fUser').value.trim(),
+    pass: type === 'other' ? '' : $('fPass').value,
+    key: type === 'other' ? $('fKey').value.trim() : '',
+    price: type === 'panel' ? normUrl($('fPrice').value) : '',
+    monitor: normUrl($('fMonitor').value),
+  });
+  if (loginChanged) { delete s.token; delete s.uid; delete s.access; }
+  if (webStore) {
+    let user = null;
+    try { user = JSON.parse(webStore.user || 'null'); } catch {}
+    Object.assign(s, { web: true, uid: user && user.id, token: webStore.token || webStore.checkin_token || '' });
+    delete s.access;
+  } else if (s.pass) s.web = false;
+  delete apiSites[s.id];
+  delete topupUrl[s.id];
+  delete modelCache[s.id];
+  delete infoCache[s.id + 'keys'];
+  delete infoCache[s.id + 'invite'];
+  saveInfo();
+  if (!editing) {
+    sites.push(s);
+    if (sites.length === 1) renderList(); else groupOf(s).appendChild(makeCard(s));
+  } else {
+    const old = $('c_' + s.id);
+    if (old.parentElement === groupOf(s)) old.replaceWith(makeCard(s));
+    else { old.remove(); groupOf(s).appendChild(makeCard(s)); }
+  }
+  updateGroups();
+  save();
+  closeSheets();
+  refreshSite(s);
+};
+$('delBtn').onclick = () => {
+  $('dialogText').textContent = '删除「' + editing.name + '」？';
+  $('dialog').classList.add('open');
+};
+$('dlgNo').onclick = () => $('dialog').classList.remove('open');
+$('dlgYes').onclick = () => {
+  sites = sites.filter(x => x !== editing);
+  save();
+  delete infoCache[editing.id + 'keys'];
+  delete infoCache[editing.id + 'invite'];
+  saveInfo();
+  $('c_' + editing.id).remove();
+  if (!sites.length) renderList(); else updateGroups();
+  $('dialog').classList.remove('open');
+  closeSheets();
+};
+
+// ---------- 弹层 ----------
+function openSheet(id) { $('mask').classList.add('open'); $(id).classList.add('open'); }
+function closeSheets() { $('mask').classList.remove('open'); document.querySelectorAll('.sheet.open').forEach(x => x.classList.remove('open')); }
+$('mask').onclick = closeSheets;
+document.querySelectorAll('[data-close]').forEach(b => (b.onclick = closeSheets));
+
+// ---------- 激活 ----------
+const PUB = {"kty":"EC","x":"JWhxLFfIDu__QCTF6IXhuoE_6MMI2-L5dA0XAXA6K30","y":"Qog7EN2kxPW9BGjJemVKyUheDqFTJiLCekPl1-aC-b0","crv":"P-256"};
+async function deviceCode() {
+  const { identifier } = await Capacitor.nativePromise('Device', 'getId');
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('qiandao:' + identifier)));
+  return [...h.slice(0, 6)].map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase().match(/.{4}/g).join('-');
+}
+async function verify(code, act) {
+  try {
+    const key = await crypto.subtle.importKey('jwk', PUB, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const sig = Uint8Array.from(atob(act.trim().replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    return await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, new TextEncoder().encode(code));
+  } catch { return false; }
+}
+function unlock() {
+  $('gate').classList.remove('open');
+  renderList();
+  for (const s of sites) {
+    if (A[s.type] || s.type === 'other') { refreshSite(s); continue; }
+    detect(s.url).then(r => {
+      s.type = r.type;
+      save();
+      $('c_' + s.id).replaceWith(makeCard(s));
+      refreshSite(s);
+    }, () => {});
+  }
+  checkUpdate();
+}
+
+// ---------- 更新 ----------
+const VER = 0;
+const RELEASE = 'https://github.com/wsttdh666-cmd/yjqiandao/releases/latest/download/';
+$('ver').textContent = '版本 ' + VER;
+async function checkUpdate() {
+  try {
+    const latest = Number(await (await fetch(RELEASE + 'version.txt')).text());
+    $('update').hidden = !(latest > VER);
+    return latest > VER ? '有新版本' : '已是最新';
+  } catch { return '检查失败'; }
+}
+$('checkBtn').onclick = async () => {
+  const btn = $('checkBtn');
+  btn.disabled = true;
+  btn.textContent = '检查中…';
+  btn.textContent = await checkUpdate();
+  setTimeout(() => { btn.textContent = '检查更新'; btn.disabled = false; }, 1500);
+};
+$('updBtn').onclick = async () => {
+  const btn = $('updBtn');
+  btn.disabled = true;
+  btn.textContent = '下载中…';
+  try {
+    await Capacitor.nativePromise('AppTools', 'install', { url: RELEASE + 'qiandao.apk' });
+    btn.textContent = '更新';
+  } catch { btn.textContent = '下载失败，重试'; }
+  btn.disabled = false;
+};
+function copyText(text, btn) {
+  const done = ok => {
+    btn.textContent = ok ? '已复制 ✓' : '复制失败，请长按手动复制';
+    btn.classList.toggle('ok', ok);
+    setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('ok'); }, 1500);
+  };
+  const fallback = () => {
+    const t = document.createElement('textarea');
+    t.value = text;
+    document.body.appendChild(t);
+    t.select();
+    const ok = document.execCommand('copy');
+    t.remove();
+    done(ok);
+  };
+  navigator.clipboard ? navigator.clipboard.writeText(text).then(() => done(true), fallback) : fallback();
+}
+$('copyCode').onclick = () => copyText($('devCode').textContent, $('copyCode'));
+$('actBtn').onclick = async () => {
+  const v = $('actInput').value.trim();
+  if (await verify($('devCode').textContent, v)) { localStorage.setItem('act', v); unlock(); }
+  else $('actErr').textContent = '激活码不对';
+};
+deviceCode().then(async code => {
+  $('devCode').textContent = code;
+  if (await verify(code, localStorage.getItem('act') || '')) unlock();
+});
+</script>
+</body>
+</html>

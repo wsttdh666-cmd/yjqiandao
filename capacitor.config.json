@@ -1,0 +1,8 @@
+{
+  "appId": "app.qiandao.hub",
+  "appName": "一键签到",
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}
