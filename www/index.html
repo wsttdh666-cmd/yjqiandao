@@ -10,7 +10,7 @@ document.documentElement.dataset.theme = (localStorage.getItem('theme') || 'auto
 </script>
 <title>一键签到</title>
 <style>
-:root { --top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); --bg: #f5f6fa; --card: #fff; --text: #1f2330; --sub: #8a90a2; --line: #eceef3; --accent: #5b6cff; --ok: #22b573; --bad: #e5484d; --field: #fafbfc; --okbg: #e3f7ee; --badbg: #fde8e8; --accbg: #eef0ff; --muted: #c4c8d4; }
+:root { color-scheme: light; --top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); --bg: #f5f6fa; --card: #fff; --text: #1f2330; --sub: #8a90a2; --line: #eceef3; --accent: #5b6cff; --ok: #22b573; --bad: #e5484d; --field: #fafbfc; --okbg: #e3f7ee; --badbg: #fde8e8; --accbg: #eef0ff; --muted: #c4c8d4; }
 html[data-theme="dark"] { color-scheme: dark; --bg: #121419; --card: #1c1f27; --text: #e7e9ee; --sub: #8d93a3; --line: #2a2e38; --accent: #7482ff; --ok: #3ccf8e; --bad: #ff6b6f; --field: #161920; --okbg: #17332a; --badbg: #3a1d20; --accbg: #232845; --muted: #4a4f5c; }
 html { background: var(--bg); min-height: 100%; }
 html { overscroll-behavior: none; }
@@ -34,7 +34,7 @@ h1 { font-size: 22px; margin: 0; }
 .card .row + .row { margin-top: 10px; }
 .card .link { min-width: 0; font-size: 13px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .theme { margin: 4px 18px 12px; }
-.theme button { padding: 7px 4px; font-size: 13px; }
+#theme button { padding: 7px 4px; font-size: 13px; }
 .ver { text-align: center; color: var(--sub); font-size: 12px; padding: 0 0 calc(var(--bottom) + 16px); }
 .card .main { flex: 1; min-width: 0; }
 .card .name { font-weight: 600; }
@@ -745,7 +745,11 @@ async function showModels(s, fresh) {
   try {
     if (fresh || !modelCache[s.id]) modelCache[s.id] = await loadModels(s);
     if (modelSite === s) renderModels(modelCache[s.id]);
-  } catch (e) { $('modelBody').innerHTML = '<div class="empty"></div>'; $('modelBody').firstChild.textContent = '加载失败：' + e.message; }
+  } catch (e) {
+    if (modelSite !== s) return;
+    $('modelBody').innerHTML = '<div class="empty"></div>';
+    $('modelBody').firstChild.textContent = '加载失败：' + e.message;
+  }
 }
 function openModels(s) {
   modelSite = s;
@@ -805,6 +809,7 @@ async function showLogs(s, fresh) {
     logCache[s.id] = await loadLogs(s);
     if (modelSite === s && modelTab === 'logs') renderLogs(logCache[s.id]);
   } catch (e) {
+    if (modelSite !== s) return;
     $('logBody').innerHTML = '<div class="empty"></div>';
     $('logBody').firstChild.textContent = '加载失败：' + e.message;
   }
@@ -905,8 +910,14 @@ function checkUrl() {
     if (!found || found.p !== p) return;
     showType(r.type);
     if (!editing && r.checkin === false) setKind('view');
-  }, () => {
+  }, e => {
     if (!found || found.p !== p) return;
+    if (e.message === '连不上这个网址') {
+      found = null;
+      $('fType').className = 'type-line bad';
+      $('fType').textContent = e.message;
+      return;
+    }
     showType('other');
     if (!editing) setKind('view');
   });
@@ -966,9 +977,10 @@ $('saveBtn').onclick = async () => {
   const view = editKind === 'view';
   clearTimeout(detectTimer);
   $('saveBtn').disabled = true;
-  const det = await checkUrl().catch(() => null);
+  const det = await checkUrl().catch(e => e);
   $('saveBtn').disabled = false;
-  const type = det ? det.type : 'other';
+  if (det.message === '连不上这个网址') return;
+  const type = det.type || 'other';
   const s = editing || { id: 's' + Date.now() };
   const loginChanged = s.url !== url || s.user !== $('fUser').value.trim() || s.pass !== $('fPass').value;
   Object.assign(s, {
@@ -1053,6 +1065,7 @@ function unlock() {
       s.type = r.type;
       save();
       $('c_' + s.id).replaceWith(makeCard(s));
+      updateGroups();
       refreshSite(s);
     }, () => refreshSite(s));
   }
@@ -1063,18 +1076,21 @@ function unlock() {
 const VER = 0;
 const RELEASE = 'https://github.com/wsttdh666-cmd/yjqiandao/releases/latest/download/';
 $('ver').textContent = '版本 ' + VER;
-const darkMq = matchMedia('(prefers-color-scheme: dark)');
+let sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
 function applyTheme() {
   const t = localStorage.getItem('theme') || 'auto';
-  document.documentElement.dataset.theme = t === 'auto' ? (darkMq.matches ? 'dark' : 'light') : t;
+  const dark = t === 'auto' ? sysDark : t === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   for (const b of $('theme').children) b.classList.toggle('on', b.dataset.t === t);
+  Capacitor.nativePromise('SystemBars', 'setStyle', { style: dark ? 'DARK' : 'LIGHT' }).catch(() => {});
 }
+window.onSystemDark = d => { sysDark = d; applyTheme(); };
 for (const b of $('theme').children) b.onclick = () => { localStorage.setItem('theme', b.dataset.t); applyTheme(); };
-darkMq.addEventListener('change', applyTheme);
 applyTheme();
 async function checkUpdate() {
   try {
     const latest = Number(await (await fetch(RELEASE + 'version.txt')).text());
+    if (!(latest > 0)) return '检查失败';
     $('update').hidden = !(latest > VER);
     return latest > VER ? '有新版本' : '已是最新';
   } catch { return '检查失败'; }
