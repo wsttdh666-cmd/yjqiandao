@@ -883,14 +883,15 @@ async function detect(url) {
   throw new Error('认不出这个站');
 }
 const manualKey = t => t === 'other' || t === 'wallet';
+let shownType = null;
 function showType(t) {
+  shownType = t;
   $('fType').className = 'type-line';
   $('fType').textContent = t && t !== 'other' ? TYPE_INFO[t][0] : '';
   $('fUserLabel').textContent = t && t !== 'other' ? TYPE_INFO[t][1] : '账号';
   $('priceBox').hidden = t !== 'panel';
-  $('loginBox').hidden = t === 'other';
-  $('credBox').hidden = t === 'wallet';
-  $('webLogin').textContent = t === 'wallet' ? '在 App 里登录' : '没有账号密码？在 App 里登录';
+  $('credBox').hidden = t === 'wallet' || t === 'other';
+  $('webLogin').textContent = t === 'wallet' ? '在 App 里登录' : t === 'other' ? '在 App 里登录取密钥' : '没有账号密码？在 App 里登录';
   $('keyBox').hidden = !manualKey(t);
 }
 let editKind = 'sign';
@@ -940,9 +941,22 @@ function addAltRow(value) {
 }
 $('addAlt').onclick = () => addAltRow('').querySelector('input').focus();
 let webStore = null;
+const KEY_SCAN = `(() => {
+  const t = document.body.innerText + ' ' + [...document.querySelectorAll('input, textarea')].map(e => e.value).join(' ');
+  const m = (t.match(/(?<![\\w-])[A-Za-z][A-Za-z0-9]*-[\\w-]{20,}/g) || []).filter(k => /[A-Z]/.test(k) && /[a-z]/.test(k) && /\\d/.test(k));
+  return m[0] || '';
+})()`;
 $('webLogin').onclick = async () => {
   const url = normUrl($('fUrl').value);
   if (!url) return $('fUrl').focus();
+  if (shownType === 'other') {
+    const { key } = await Capacitor.nativePromise('AppTools', 'webLogin', { url, scan: KEY_SCAN });
+    const k = JSON.parse(key || 'null');
+    if (!k) return;
+    $('fKey').value = k;
+    $('webState').textContent = '已拿到密钥 ✓';
+    return;
+  }
   const { storage } = await Capacitor.nativePromise('AppTools', 'webLogin', { url });
   const store = JSON.parse(JSON.parse(storage) || 'null');
   if (!store) return;
@@ -963,7 +977,7 @@ function openEdit(s) {
   $('fUser').value = s ? s.user : '';
   $('fPass').value = s ? s.pass : '';
   $('fPass').type = 'password';
-  $('fKey').value = (s && (s.key || (s.type === 'other' ? s.user : ''))) || '';
+  $('fKey').value = (s && s.key) || '';
   webStore = null;
   $('webState').textContent = s && s.web ? '已登录 ✓' : '';
   $('fPrice').value = (s && s.price) || '';

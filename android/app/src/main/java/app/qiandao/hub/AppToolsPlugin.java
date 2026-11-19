@@ -48,6 +48,6 @@ public class AppToolsPlugin extends Plugin {
     @PluginMethod
     public void webLogin(PluginCall call) {
         LoginActivity.pending = call;
-        getActivity().startActivity(new Intent(getContext(), LoginActivity.class).putExtra("url", call.getString("url")));
+        getActivity().startActivity(new Intent(getContext(), LoginActivity.class).putExtra("url", call.getString("url")).putExtra("scan", call.getString("scan")));
     }
 }

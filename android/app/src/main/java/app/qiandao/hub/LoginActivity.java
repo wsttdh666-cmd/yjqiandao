@@ -48,7 +48,18 @@ public class LoginActivity extends Activity {
                 Toast.makeText(this, "还没回到站点页面，登录完再点", Toast.LENGTH_SHORT).show();
                 return;
             }
-            web.evaluateJavascript("JSON.stringify(Object.assign({}, localStorage))", this::finishWith);
+            String scan = getIntent().getStringExtra("scan");
+            if (scan == null) {
+                web.evaluateJavascript("JSON.stringify(Object.assign({}, localStorage))", storage -> finishWith(storage, null));
+                return;
+            }
+            web.evaluateJavascript(scan, key -> {
+                if (key == null || key.equals("null") || key.equals("\"\"")) {
+                    Toast.makeText(this, "这页没找到密钥，翻到显示密钥的页面再点完成", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                finishWith("null", key);
+            });
         });
     }
 
@@ -63,7 +74,7 @@ public class LoginActivity extends Activity {
         return now.equals(site) || now.endsWith("." + site) || site.endsWith("." + now);
     }
 
-    private void finishWith(String storage) {
+    private void finishWith(String storage, String key) {
         CookieManager cookies = CookieManager.getInstance();
         String url = web.getUrl();
         String all = url == null ? null : cookies.getCookie(url);
@@ -74,6 +85,7 @@ public class LoginActivity extends Activity {
         if (pending != null) {
             JSObject result = new JSObject();
             result.put("storage", storage);
+            result.put("key", key);
             pending.resolve(result);
             pending = null;
         }
@@ -83,6 +95,6 @@ public class LoginActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (web.canGoBack()) web.goBack();
-        else finishWith("null");
+        else finishWith("null", null);
     }
 }
