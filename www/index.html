@@ -458,7 +458,14 @@ function setCard(s, chip, cls = '', info) {
 }
 const canLogin = s => A[s.type] && (s.web || (s.user && s.pass));
 
+async function keyBalance(s) {
+  const { status, j } = await req(s.url + '/user/balance', { headers: { Authorization: 'Bearer ' + s.key } });
+  if (status === 401) throw new Error('密钥不对或已失效');
+  const b = (j.balance_infos || [])[0];
+  return b ? '余额 ' + (b.currency === 'USD' ? '$' : '¥') + fmt(b.total_balance) : '';
+}
 async function refreshSite(s) {
+  if (s.type === 'other' && s.key) keyBalance(s).then(t => setCard(s, s.view ? '' : '需手动签', '', t), e => setCard(s, '出错', 'bad', e.message));
   if (s.view) {
     if (!canLogin(s)) return;
     try {
@@ -628,11 +635,10 @@ function openCaptcha() {
     el.querySelector('.t span').textContent = p.s.url.replace(/^https?:\/\//, '');
     if (p.needCode) el.querySelector('.code').value = p.s.code || '';
     if (p.cap) {
-      const img = el.querySelector('img'), ans = el.querySelector('.ans');
+      const img = el.querySelector('img');
       img.src = p.cap.img;
-      if (p.cap.numeric) ans.inputMode = 'numeric';
+      if (p.cap.numeric) el.querySelector('.ans').inputMode = 'numeric';
       img.onclick = () => newCaptcha(p);
-      ans.oninput = () => { if (p.s.capLen && ans.value.trim().length >= p.s.capLen) nextCapField(); };
     }
     for (const i of el.querySelectorAll('input')) {
       i.enterKeyHint = 'next';
@@ -669,7 +675,6 @@ $('capSubmit').onclick = async () => {
     try {
       const got = await A[p.s.type].sign(p.s, { code, id: p.cap && p.cap.id, answer });
       p.done = true;
-      if (answer) { p.s.capLen = answer.length; save(); }
       p.el.remove();
       setCard(p.s, '已签 ✓', 'ok', '刚签到 ' + got);
     } catch (e) {
