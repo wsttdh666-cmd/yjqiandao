@@ -480,6 +480,13 @@ async function webLoginSite(s) {
   refreshSite(s);
 }
 
+const today = () => new Date().toDateString();
+const withToday = (s, balance) => [balance, s.got && s.got.day === today() ? '今日 ' + s.got.amount : ''].filter(Boolean).join(' · ');
+async function signed(s, got) {
+  s.got = { day: today(), amount: got };
+  save();
+  setCard(s, '已签 ✓', 'ok', withToday(s, await A[s.type].balance(s).catch(() => '')));
+}
 async function keyBalance(s) {
   const { status, j } = await req(s.url + '/user/balance', { headers: { Authorization: 'Bearer ' + s.key } });
   if (status === 401) throw new Error('密钥不对或已失效');
@@ -500,7 +507,7 @@ async function refreshSite(s) {
   setCard(s, '查询中', 'wait');
   try {
     const st = await A[s.type].status(s);
-    setCard(s, st.done ? '已签 ✓' : '未签', st.done ? 'ok' : '', await A[s.type].balance(s));
+    setCard(s, st.done ? '已签 ✓' : '未签', st.done ? 'ok' : '', withToday(s, await A[s.type].balance(s)));
     if (!(s.id in topupUrl)) checkTopup(s);
     return st;
   } catch (e) { failed(s, e); }
@@ -632,7 +639,7 @@ $('signAll').onclick = async () => {
         setCard(s, '待填验证码', 'wait');
       } else {
         const got = await A[s.type].sign(s);
-        setCard(s, '已签 ✓', 'ok', '刚签到 ' + got);
+        await signed(s, got);
       }
     } catch (e) { setCard(s, '出错', 'bad', e.message); }
   }));
@@ -698,7 +705,7 @@ $('capSubmit').onclick = async () => {
       const got = await A[p.s.type].sign(p.s, { code, id: p.cap && p.cap.id, answer });
       p.done = true;
       p.el.remove();
-      setCard(p.s, '已签 ✓', 'ok', '刚签到 ' + got);
+      await signed(p.s, got);
     } catch (e) {
       p.el.querySelector('.err').textContent = e.message;
       if (p.cap) await newCaptcha(p);
