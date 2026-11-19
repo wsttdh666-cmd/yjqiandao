@@ -34,7 +34,7 @@ h1 { font-size: 22px; margin: 0; }
 .card .row + .row { margin-top: 10px; }
 .card .link { min-width: 0; font-size: 13px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .theme { margin: 4px 18px 12px; }
-#theme button { padding: 7px 4px; font-size: 13px; }
+.seg.theme button { padding: 7px 4px; font-size: 13px; }
 .ver { text-align: center; color: var(--sub); font-size: 12px; padding: 0 0 calc(var(--bottom) + 16px); }
 .card .main { flex: 1; min-width: 0; }
 .card .name { font-weight: 600; }
@@ -134,13 +134,15 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 #gate .err { color: var(--bad); font-size: 13px; min-height: 20px; margin-top: 6px; }
 #actBtn { width: 100%; padding: 14px; border-radius: 14px; background: var(--accent); color: #fff; font-weight: 600; font-size: 16px; }
 .hint { color: var(--sub); text-align: center; padding: 40px 0; }
-#dialog { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 20; background: rgba(15,18,30,.35); }
-#dialog.open { display: flex; }
-#dialog .box { background: var(--card); border-radius: 16px; width: 80%; max-width: 320px; padding: 18px; }
-#dialog .box p { margin: 0 0 16px; }
-#dialog .row { display: flex; gap: 10px; }
-#dialog .row button { flex: 1; padding: 11px; border-radius: 10px; background: var(--line); }
-#dialog .row .del { background: var(--bad); color: #fff; }
+.dialog { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 20; background: rgba(15,18,30,.35); }
+.dialog.open { display: flex; }
+.dialog .box { background: var(--card); border-radius: 16px; width: 80%; max-width: 320px; padding: 18px; }
+.dialog .box p { margin: 0 0 16px; }
+.dialog .pw { margin-bottom: 16px; }
+.dialog .row { display: flex; gap: 10px; }
+.dialog .row button { flex: 1; padding: 11px; border-radius: 10px; background: var(--line); }
+.dialog .row .del { background: var(--bad); color: #fff; }
+.dialog .row .primary { background: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
@@ -151,6 +153,8 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 <div class="filters" id="siteFilters"><button data-f="all" class="on">全部</button><button data-f="sign">签到</button><button data-f="view">仅查看</button><button class="fav" id="siteFav">★ 收藏</button></div>
 <div id="list"></div>
 <div class="seg theme" id="theme"><button data-t="auto">跟随系统</button><button data-t="light">浅色</button><button data-t="dark">深色</button></div>
+<div class="seg theme"><button id="exportBtn" data-label="导出站点">导出站点</button><button id="importBtn" data-label="导入站点">导入站点</button></div>
+<input type="file" id="importFile" hidden>
 <div class="ver" id="ver"></div>
 
 <div class="mask" id="mask"></div>
@@ -213,12 +217,29 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
   <button id="actBtn">激活</button>
 </div>
 
-<div id="dialog"><div class="box"><p id="dialogText"></p><div class="row"><button id="dlgNo">取消</button><button class="del" id="dlgYes">删除</button></div></div></div>
+<div class="dialog" id="pwDialog"><div class="box"><p id="pwTitle"></p><div class="pw"><input class="field" id="pwInput" type="password" autocomplete="off"><button class="eye" id="pwEye">👁</button></div><div class="row"><button id="pwNo">取消</button><button class="primary" id="pwYes">确定</button></div></div></div>
+<div class="dialog" id="dialog"><div class="box"><p id="dialogText"></p><div class="row"><button id="dlgNo">取消</button><button class="del" id="dlgYes">删除</button></div></div></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let sites = JSON.parse(localStorage.getItem('sites') || '[]');
-const save = () => localStorage.setItem('sites', JSON.stringify(sites));
+let sites = [];
+let saving = Promise.resolve();
+function sealed(k, v) {
+  const text = JSON.stringify(v);
+  saving = saving.then(() => Capacitor.nativePromise('AppTools', 'seal', { text })).then(r => localStorage.setItem(k, 'enc:' + r.text)).catch(() => {});
+}
+async function unsealed(k, empty) {
+  const v = localStorage.getItem(k);
+  if (!v) return empty;
+  if (!v.startsWith('enc:')) return JSON.parse(v);
+  try {
+    return JSON.parse((await Capacitor.nativePromise('AppTools', 'unseal', { text: v.slice(4) })).text);
+  } catch {
+    localStorage.setItem(k + '_bad', v);
+    return empty;
+  }
+}
+const save = () => sealed('sites', sites);
 const trimUrl = u => u.trim().replace(/\/+$/, '');
 const fmt = n => String(Number(Number(n).toFixed(4)));
 
@@ -534,8 +555,8 @@ async function checkTopup(s) {
   const el = $('c_' + s.id);
   if (el) el.querySelector('.topup').hidden = !topupUrl[s.id];
 }
-const infoCache = JSON.parse(localStorage.getItem('info') || '{}');
-const saveInfo = () => localStorage.setItem('info', JSON.stringify(infoCache));
+const infoCache = {};
+const saveInfo = () => sealed('info', infoCache);
 let infoNow = null;
 const maskKey = k => k.slice(0, 7) + '……' + k.slice(-4);
 function infoRow(r) {
@@ -1202,6 +1223,64 @@ function copyText(text, btn) {
   };
   navigator.clipboard ? navigator.clipboard.writeText(text).then(() => done(true), fallback) : fallback();
 }
+function askPassword(title) {
+  $('pwTitle').textContent = title;
+  $('pwInput').value = '';
+  $('pwInput').type = 'password';
+  $('pwDialog').classList.add('open');
+  $('pwInput').focus();
+  return new Promise(done => {
+    const close = v => { $('pwDialog').classList.remove('open'); done(v); };
+    $('pwNo').onclick = () => close(null);
+    $('pwYes').onclick = () => $('pwInput').value ? close($('pwInput').value) : $('pwInput').focus();
+  });
+}
+$('pwEye').onclick = () => { $('pwInput').type = $('pwInput').type === 'password' ? 'text' : 'password'; };
+const flash = (btn, text) => { btn.textContent = text; setTimeout(() => { btn.textContent = btn.dataset.label; }, 1800); };
+const b64 = a => btoa(Array.from(a, c => String.fromCharCode(c)).join(''));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function passKey(pw, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+$('exportBtn').onclick = async () => {
+  const btn = $('exportBtn');
+  if (!sites.length) return flash(btn, '还没有站点');
+  const pw = await askPassword('设一个导出密码，导入时要用');
+  if (!pw) return;
+  if (await askPassword('再输一次') !== pw) return flash(btn, '两次不一样');
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await passKey(pw, salt), new TextEncoder().encode(JSON.stringify(sites))));
+  const text = JSON.stringify({ app: '一键签到', salt: b64(salt), iv: b64(iv), data: b64(data) });
+  await Capacitor.nativePromise('AppTools', 'share', { name: '签到站点备份.json', text });
+};
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = async () => {
+  const btn = $('importBtn'), file = $('importFile').files[0];
+  $('importFile').value = '';
+  if (!file) return;
+  let box = null;
+  try { box = JSON.parse(await file.text()); } catch {}
+  if (!box || !box.data) return flash(btn, '不是备份文件');
+  const pw = await askPassword('输入导出时设的密码');
+  if (!pw) return;
+  let list;
+  try {
+    list = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(box.iv) }, await passKey(pw, unb64(box.salt)), unb64(box.data))));
+  } catch { return flash(btn, '密码不对'); }
+  const have = new Set(sites.map(s => s.url));
+  const added = list.filter(s => !have.has(s.url));
+  const wasEmpty = !sites.length;
+  sites.push(...added);
+  save();
+  if (wasEmpty) renderList();
+  else {
+    for (const s of added) groupOf(s).appendChild(makeCard(s));
+    updateGroups();
+  }
+  added.forEach(refreshSite);
+  flash(btn, '导入了 ' + added.length + ' 个站点');
+};
 $('copyCode').onclick = () => copyText($('devCode').textContent, $('copyCode'));
 $('actBtn').onclick = async () => {
   const v = $('actInput').value.trim();
@@ -1209,6 +1288,10 @@ $('actBtn').onclick = async () => {
   else $('actErr').textContent = '激活码不对';
 };
 deviceCode().then(async code => {
+  sites = await unsealed('sites', []);
+  Object.assign(infoCache, await unsealed('info', {}));
+  save();
+  saveInfo();
   $('devCode').textContent = code;
   if (await verify(code, localStorage.getItem('act') || '')) unlock();
 });
