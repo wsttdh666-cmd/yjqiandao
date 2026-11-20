@@ -104,8 +104,13 @@ final class Codex implements Relay.Channel {
                         if (!state.equals(u.getQueryParameter("state")) || code == null) {
                             result = "登录没成功：" + u.getQueryParameter("error");
                         } else {
-                            exchange(code, u.getQueryParameter("client_id"), verifier, deviceId);
-                            result = null;
+                            try {
+                                exchange(code, u.getQueryParameter("client_id"), verifier, deviceId);
+                                result = null;
+                            } catch (Relay.Upstream e) {
+                                if (!e.getMessage().contains("invalid_grant")) throw e;
+                                result = "OpenAI 不给用：这个号的 ChatGPT 套餐可能不支持（免费号不行），换个付费号再登";
+                            }
                         }
                         break;
                     }
