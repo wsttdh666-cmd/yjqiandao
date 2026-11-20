@@ -11,7 +11,7 @@ import android.webkit.WebViewClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import java.io.InputStream;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -23,7 +23,8 @@ import org.json.JSONObject;
 // Gemini 网页版（gemini.google.com）页面转接：粘贴 Cookie，后台网页里直接操作输入框、发送、读回复
 final class GeminiWeb implements Relay.Channel {
     private static final String PREFIX = "【网页】";
-    private static final String MODEL = PREFIX + "gemini";
+    // 名字 → Gemini 网页「模式选择器」里的选项关键词（自动不用切）
+    private static final String[][] MODES = {{"自动", ""}, {"日常", "Hydrogen"}, {"深入", "Neon"}, {"代码", "Carbon"}};
     private static final String PAGE = "https://gemini.google.com/app";
 
     private final Relay relay;
@@ -60,11 +61,16 @@ final class GeminiWeb implements Relay.Channel {
     }
 
     public List<String> models() {
-        return Arrays.asList(MODEL);
+        List<String> list = new ArrayList<>();
+        for (String[] m : MODES) list.add(PREFIX + m[0]);
+        return list;
     }
 
     public boolean owns(String model) {
-        return model.equals(MODEL);
+        if (!model.startsWith(PREFIX)) return false;
+        String s = model.substring(PREFIX.length());
+        for (String[] m : MODES) if (m[0].equals(s)) return true;
+        return false;
     }
 
     void login(String text, Consumer<String> done) {
@@ -202,10 +208,13 @@ final class GeminiWeb implements Relay.Channel {
             Thread.sleep(500);
         }
         if (!ready) throw new Relay.Upstream(503, "Gemini 网页还没准备好，稍后再试", 0);
+        String sub = req.getString("model").substring(PREFIX.length());
+        String mode = "";
+        for (String[] m : MODES) if (m[0].equals(sub)) mode = m[1];
         String key = Relay.random(8);
         LinkedBlockingQueue<JSONArray> q = new LinkedBlockingQueue<>();
         pending.put(key, q);
-        String call = "__web.run(" + JSONObject.quote(key) + "," + JSONObject.quote(flatten(req)) + ")";
+        String call = "__web.run(" + JSONObject.quote(key) + "," + JSONObject.quote(flatten(req)) + "," + JSONObject.quote(mode) + ")";
         main.post(() -> {
             if (web != null) web.evaluateJavascript(call, null);
         });

@@ -52,7 +52,7 @@
     stop(id) {
       if (current === id) current = null;
     },
-    async run(id, prompt) {
+    async run(id, prompt, mode) {
       current = id;
       try {
         const reset = newChat();
@@ -60,6 +60,15 @@
           reset.click();
           await wait(() => answers().length === 0, 5000);
           await sleep(300);
+        }
+        if (mode) {
+          const pk = await wait(() => [...document.querySelectorAll('button')].find(b => /模式选择器|模式|mode/i.test(b.getAttribute('aria-label') || '')), 8000);
+          if (pk) {
+            pk.click();
+            const opt = await wait(() => [...document.querySelectorAll('[role="menuitemradio"],[role="menuitem"],[role="option"],.mat-mdc-menu-item')].find(e => new RegExp(mode, 'i').test(e.innerText || '')), 4000);
+            if (opt) { opt.click(); await sleep(500); } else document.body.click();
+            post('log', '模式 ' + mode);
+          }
         }
         const box = await wait(editor, 15000);
         if (!box) throw new Error('找不到输入框');

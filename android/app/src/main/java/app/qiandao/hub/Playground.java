@@ -90,9 +90,11 @@ final class Playground implements Relay.Channel {
         for (int i = 0; list != null && i < list.length(); i++) {
             JSONArray row = list.optJSONArray(i);
             if (row == null) continue;
-            JSONArray caps = row.optJSONArray(64);
-            if (!has(caps, 1) || has(caps, 21) || has(caps, 26) || has(caps, 37) || has(caps, 53)) continue;
-            rows.put(row.optString(0).replaceFirst("^models/", ""), row);
+            String id = row.optString(0).replaceFirst("^models/", "");
+            // 只留能聊天的 Gemini / Gemma，滤掉语音、转录、画图、机器人、实时翻译这些用不上的
+            if (!(id.startsWith("gemini") || id.startsWith("gemma"))) continue;
+            if (id.matches(".*(-tts|transcribe|image|nano-banana|robotics|-live|imagen|veo|embed).*")) continue;
+            rows.put(id, row);
         }
     }
 
