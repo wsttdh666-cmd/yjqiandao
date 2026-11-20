@@ -469,7 +469,7 @@ function makeCard(s) {
   }
   el.querySelector('.topup').hidden = !topupUrl[s.id];
   el.querySelector('.topup').onclick = e => { e.stopPropagation(); openBrowser(topupUrl[s.id]); };
-  el.querySelector('.models').hidden = !(s.type === 'newapi' || (s.type === 'panel' && s.price) || (s.type === 'wallet' && canLogin(s)));
+  el.querySelector('.models').hidden = !(s.type === 'newapi' || (s.type === 'panel' && s.price) || (s.type === 'wallet' && canLogin(s)) || s.key);
   el.querySelector('.models').onclick = e => { e.stopPropagation(); openModels(s); };
   el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
   el.querySelector('.chip').onclick = e => {
@@ -751,8 +751,16 @@ $('capSubmit').onclick = async () => {
 let modelSite = null, billing = 'all', favOnly = false, vendor = '';
 const favs = new Set(JSON.parse(localStorage.getItem('favs') || '[]'));
 const modelCache = {};
+async function keyModels(s) {
+  const [{ status, j }, mon] = await Promise.all([
+    req(s.url + '/v1/models', { headers: { Authorization: 'Bearer ' + s.key } }),
+    s.monitor ? loadMonitor(trimUrl(s.monitor)) : {},
+  ]);
+  if (status === 401) throw new Error('密钥不对或已失效');
+  return (j.data || []).map(m => ({ vendor: '', name: m.id, price: '', mon: mon[m.id] })).sort((a, b) => !!b.mon - !!a.mon);
+}
 async function loadModels(s) {
-  if (s.type === 'wallet') {
+  if (s.type === 'wallet' && canLogin(s)) {
     const [j, mon] = await Promise.all([A.wallet.models(s), s.monitor ? loadMonitor(trimUrl(s.monitor)) : {}]);
     const unit = j.billingUnit ? ' ' + j.billingUnit : '', n = x => Number(x).toLocaleString('en-US');
     return (j.models || []).map(m => {
@@ -762,7 +770,7 @@ async function loadModels(s) {
     }).sort((a, b) => !!b.mon - !!a.mon);
   }
   const base = trimUrl(s.price || (s.type === 'newapi' ? s.url : ''));
-  if (!base) return [];
+  if (!base) return s.key ? keyModels(s) : [];
   const [pricing, cur, mon] = await Promise.all([
     req(base + '/api/pricing'),
     currency(base),
@@ -797,13 +805,13 @@ function renderModels(list) {
   body.className = 'body';
   body.id = 'modelBody';
   body.innerHTML = '<div class="empty" id="noMatch" hidden></div>';
-  body.firstChild.textContent = list.length ? '没有符合的模型' : '这个站没有模型价格';
+  body.firstChild.textContent = list.length ? '没有符合的模型' : '这个站没有模型';
   for (const m of list) {
     const el = document.createElement('div');
     const key = modelSite.id + '|' + m.name;
     el.className = 'model';
     el.dataset.n = m.name.toLowerCase();
-    el.dataset.t = m.per ? 'per' : 'token';
+    el.dataset.t = m.price ? (m.per ? 'per' : 'token') : '';
     el.dataset.v = m.vendor;
     el.dataset.k = key;
     el.innerHTML = '<div class="mh"><div class="mn"></div><button class="star">☆</button></div><div class="mp"></div>' + (m.mon ? '<div class="ms"><span class="dot"></span><span></span></div>' : '');
@@ -819,6 +827,7 @@ function renderModels(list) {
       if (favOnly) filterModels();
     };
     el.querySelector('.mp').textContent = m.price;
+    el.querySelector('.mp').hidden = !m.price;
     if (m.mon) {
       el.querySelector('.dot').classList.add(m.mon.status);
       el.querySelector('.ms span:last-child').textContent = m.mon.label + ' 成功率 ' + (m.mon.rate == null ? '—' : m.mon.rate + '%');
