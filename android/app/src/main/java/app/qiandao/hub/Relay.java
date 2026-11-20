@@ -53,6 +53,7 @@ final class Relay {
     final Codex codex;
     final Playground pg;
     final Antigravity agy;
+    final GeminiWeb web;
     private ServerSocket server;
     private Semaphore slots;
     private long lastStart, coolUntil;
@@ -62,9 +63,11 @@ final class Relay {
         codex = new Codex(this);
         pg = new Playground(this, ctx);
         agy = new Antigravity(this);
+        web = new GeminiWeb(this, ctx);
         channels.add(codex);
         channels.add(pg);
         channels.add(agy);
+        channels.add(web);
     }
 
     interface Callback {
@@ -198,7 +201,7 @@ final class Relay {
 
     void stop() {
         running = null;
-        new android.os.Handler(android.os.Looper.getMainLooper()).post(pg::close);
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> { pg.close(); web.close(); });
         try {
             server.close();
         } catch (IOException ignored) {

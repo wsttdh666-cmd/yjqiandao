@@ -1,7 +1,6 @@
 package app.qiandao.hub;
 
 import android.net.Uri;
-import android.util.Base64;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;

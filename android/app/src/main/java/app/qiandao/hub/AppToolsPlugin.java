@@ -72,6 +72,7 @@ public class AppToolsPlugin extends Plugin {
             s.put("gpt", r.codex.email());
             s.put("pg", r.pg.email());
             s.put("agy", r.agy.email());
+            s.put("web", r.web.email());
         }
         return s;
     }
@@ -119,11 +120,14 @@ public class AppToolsPlugin extends Plugin {
             call.reject("先开启订阅转接");
             return;
         }
-        if ("pg".equals(call.getString("provider"))) {
-            r.pg.login(call.getString("cookie", ""), error -> {
+        String prov = call.getString("provider");
+        if ("pg".equals(prov) || "web".equals(prov)) {
+            Consumer<String> back = error -> {
                 if (error == null) call.resolve(state());
                 else call.reject(error);
-            });
+            };
+            if ("web".equals(prov)) r.web.login(call.getString("cookie", ""), back);
+            else r.pg.login(call.getString("cookie", ""), back);
             return;
         }
         Consumer<String> done = error -> {
@@ -144,6 +148,7 @@ public class AppToolsPlugin extends Plugin {
             Relay r = Relay.running;
             String provider = call.getString("provider");
             if (r != null && "pg".equals(provider)) r.pg.logout();
+            else if (r != null && "web".equals(provider)) r.web.logout();
             else if (r != null && "agy".equals(provider)) r.agy.logout();
             else if (r != null) r.codex.logout();
             call.resolve(state());

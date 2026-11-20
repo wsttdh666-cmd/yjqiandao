@@ -159,7 +159,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 <div class="seg theme" id="theme"><button data-t="auto">跟随系统</button><button data-t="light">浅色</button><button data-t="dark">深色</button></div>
 <div class="seg theme"><button id="exportBtn" data-label="导出站点">导出站点</button><button id="importBtn" data-label="导入站点">导入站点</button></div>
 <input type="file" id="importFile" hidden>
-<div class="seg theme"><button id="relayBtn">订阅转接</button></div>
+<div class="seg theme"><button id="relayBtn">官方转接</button></div>
 <div class="ver" id="ver"></div>
 
 <div class="mask" id="mask"></div>
@@ -208,13 +208,16 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 </div>
 
 <div class="sheet" id="relaySheet">
-  <div class="head"><b>订阅转接</b><button class="small-btn" id="relayPower">开启</button><button class="small-btn" data-close>收起</button></div>
+  <div class="head"><b>官方转接</b><button class="small-btn" id="relayPower">开启</button><button class="small-btn" data-close>收起</button></div>
   <div class="body" id="relayBody" hidden>
     <div class="keyrow"><div class="main"><div class="kt">调用地址</div><div class="ks" id="relayUrl"></div></div><button class="small-btn" id="relayUrlCopy">复制</button></div>
     <div class="keyrow"><div class="main"><div class="kt">密钥</div><div class="ks" id="relayKey"></div></div><button class="small-btn" id="relayKeyCopy">复制</button></div>
+    <label>官方转接</label>
     <div class="keyrow"><div class="main"><div class="kt">GPT</div><div class="ks" id="relayGpt"></div></div><button class="small-btn" id="relayGptBtn">登录</button></div>
-    <div class="keyrow"><div class="main"><div class="kt">PG</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgBtn">登录</button></div>
-    <div class="keyrow"><div class="main"><div class="kt">AGY</div><div class="ks" id="relayAgy"></div></div><button class="small-btn" id="relayAgyBtn">登录</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">Gemini · 反重力</div><div class="ks" id="relayAgy"></div></div><button class="small-btn" id="relayAgyBtn">登录</button></div>
+    <label>页面转接</label>
+    <div class="keyrow"><div class="main"><div class="kt">Gemini · AI Studio</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgBtn">登录</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">Gemini · 网页版</div><div class="ks" id="relayWeb"></div></div><button class="small-btn" id="relayWebBtn">登录</button></div>
     <label>并发</label>
     <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
     <label>间隔</label>
@@ -1356,6 +1359,8 @@ function showRelay(st) {
   $('relayPgBtn').textContent = st.pg ? '退出' : '登录';
   $('relayAgy').textContent = st.agy || '没登录';
   $('relayAgyBtn').textContent = st.agy ? '退出' : '登录';
+  $('relayWeb').textContent = st.web || '没登录';
+  $('relayWebBtn').textContent = st.web ? '退出' : '登录';
   for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
   for (const b of $('relayGap').children) b.classList.toggle('on', +b.dataset.v === st.gap);
   for (const b of $('relayCap').children) b.classList.toggle('on', +b.dataset.v === st.cap);
@@ -1400,7 +1405,7 @@ function askRisk(key, text, action) {
 $('riskOk').onchange = () => { $('riskYes').disabled = !$('riskOk').checked; };
 $('relayPower').onclick = async () => {
   if (relay.running) return showRelay(await relayCall('relay', { on: false }));
-  if (await askRisk('relayRisk', '订阅转接会拿你登录的 ChatGPT 付费号额度给酒馆用，走的是 OpenAI 给第三方应用的官方登录。用量过大或分享给别人，账号仍可能被限制。', '开启')) relayOn();
+  if (await askRisk('relayRisk', '官方转接会拿你登录的 ChatGPT 付费号额度给酒馆用，走的是 OpenAI 给第三方应用的官方登录。用量过大或分享给别人，账号仍可能被限制。', '开启')) relayOn();
 };
 $('relayUrlCopy').onclick = e => copyText(relay.url, e.target);
 $('relayKeyCopy').onclick = e => copyText(relay.key, e.target);
@@ -1425,6 +1430,19 @@ $('relayPgBtn').onclick = async () => {
   } catch (e) {
     $('relayPg').textContent = e.message;
     $('relayPgBtn').textContent = '登录';
+  }
+};
+$('relayWebBtn').onclick = async () => {
+  if (relay.web) return showRelay(await relayCall('relayLogout', { provider: 'web' }));
+  if (!await askRisk('webRisk', '网页版用你自己谷歌号在 gemini.google.com 上聊天的额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制甚至封这个号。', '登录')) return;
+  const cookie = await askPassword('粘贴 gemini.google.com 的 Cookie');
+  if (!cookie) return;
+  $('relayWebBtn').textContent = '登录中…';
+  try {
+    showRelay(await relayCall('relayLogin', { provider: 'web', cookie }));
+  } catch (e) {
+    $('relayWeb').textContent = e.message;
+    $('relayWebBtn').textContent = '登录';
   }
 };
 $('relayAgyBtn').onclick = async () => {

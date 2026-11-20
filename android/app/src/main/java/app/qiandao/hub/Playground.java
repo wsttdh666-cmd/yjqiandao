@@ -90,34 +90,16 @@ final class Playground implements Relay.Channel {
     }
 
     void login(String text, Consumer<String> done) {
-        JSONArray names = new JSONArray();
-        CookieManager cm = CookieManager.getInstance();
+        JSONArray names;
         try {
-            text = text.trim().replaceFirst("(?i)^cookie:\\s*", "");
-            if (text.startsWith("[")) {
-                JSONArray list = new JSONArray(text);
-                for (int i = 0; i < list.length(); i++) {
-                    JSONObject c = list.getJSONObject(i);
-                    String domain = c.optString("domain").replaceFirst("^\\.", "");
-                    put(cm, names, "https://" + domain, c.getString("name"), c.getString("value"), c.optBoolean("hostOnly") ? null : domain);
-                }
-            } else {
-                for (String pair : text.split(";\\s*")) {
-                    int i = pair.indexOf('=');
-                    if (i <= 0) continue;
-                    String name = pair.substring(0, i).trim();
-                    put(cm, names, "https://aistudio.google.com", name, pair.substring(i + 1).trim(), name.startsWith("__Host-") ? null : "google.com");
-                }
-            }
+            names = WebChannel.cookies(text);
+        } catch (IllegalStateException e) {
+            done.accept(e.getMessage());
+            return;
         } catch (Exception e) {
             done.accept("Cookie 格式认不出来，用 Cookie-Editor 导出的 JSON 或请求头里的 Cookie 那一行");
             return;
         }
-        if (!names.toString().contains("SAPISID")) {
-            done.accept("里面没有谷歌的登录信息，要在打开 aistudio.google.com 的页面上导出");
-            return;
-        }
-        cm.flush();
         relay.prefs.edit().putString("pgCookies", names.toString()).apply();
         main.post(() -> {
             waiting = done;
@@ -125,20 +107,11 @@ final class Playground implements Relay.Channel {
         });
     }
 
-    private static void put(CookieManager cm, JSONArray names, String url, String name, String value, String domain) throws Exception {
-        String attrs = "; Path=/; Secure" + (domain == null ? "" : "; Domain=." + domain);
-        cm.setCookie(url, name + "=" + value + attrs + "; Max-Age=34560000");
-        names.put(new JSONArray().put(url).put(name + "=" + attrs));
-    }
-
     void logout() {
-        CookieManager cm = CookieManager.getInstance();
         try {
-            JSONArray names = new JSONArray(relay.prefs.getString("pgCookies", "[]"));
-            for (int i = 0; i < names.length(); i++) cm.setCookie(names.getJSONArray(i).getString(0), names.getJSONArray(i).getString(1) + "; Max-Age=0");
+            WebChannel.clear(new JSONArray(relay.prefs.getString("pgCookies", "[]")));
         } catch (Exception ignored) {
         }
-        cm.flush();
         relay.prefs.edit().remove("pgCookies").remove("pgEmail").remove("pgModels").apply();
         rows.clear();
         main.post(this::close);
