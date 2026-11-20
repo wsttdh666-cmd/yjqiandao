@@ -7,6 +7,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import java.util.function.Consumer;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -70,6 +71,7 @@ public class AppToolsPlugin extends Plugin {
         if (r != null) {
             s.put("gpt", r.codex.email());
             s.put("pg", r.pg.email());
+            s.put("agy", r.agy.email());
         }
         return s;
     }
@@ -124,11 +126,12 @@ public class AppToolsPlugin extends Plugin {
             });
             return;
         }
+        Consumer<String> done = error -> {
+            if (error == null) call.resolve(state());
+            else call.reject(error);
+        };
         try {
-            String url = r.codex.begin(error -> {
-                if (error == null) call.resolve(state());
-                else call.reject(error);
-            });
+            String url = "agy".equals(call.getString("provider")) ? r.agy.begin(done) : r.codex.begin(done);
             getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (Exception e) {
             call.reject("登录没成功：" + e.getMessage());
@@ -139,7 +142,9 @@ public class AppToolsPlugin extends Plugin {
     public void relayLogout(PluginCall call) {
         try {
             Relay r = Relay.running;
-            if (r != null && "pg".equals(call.getString("provider"))) r.pg.logout();
+            String provider = call.getString("provider");
+            if (r != null && "pg".equals(provider)) r.pg.logout();
+            else if (r != null && "agy".equals(provider)) r.agy.logout();
             else if (r != null) r.codex.logout();
             call.resolve(state());
         } catch (Exception e) {

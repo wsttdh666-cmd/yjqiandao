@@ -214,6 +214,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <div class="keyrow"><div class="main"><div class="kt">密钥</div><div class="ks" id="relayKey"></div></div><button class="small-btn" id="relayKeyCopy">复制</button></div>
     <div class="keyrow"><div class="main"><div class="kt">GPT</div><div class="ks" id="relayGpt"></div></div><button class="small-btn" id="relayGptBtn">登录</button></div>
     <div class="keyrow"><div class="main"><div class="kt">PG</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgBtn">登录</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">AGY</div><div class="ks" id="relayAgy"></div></div><button class="small-btn" id="relayAgyBtn">登录</button></div>
     <label>并发</label>
     <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
     <label>间隔</label>
@@ -1353,6 +1354,8 @@ function showRelay(st) {
   $('relayGptBtn').textContent = st.gpt ? '退出' : '登录';
   $('relayPg').textContent = st.pg || '没登录';
   $('relayPgBtn').textContent = st.pg ? '退出' : '登录';
+  $('relayAgy').textContent = st.agy || '没登录';
+  $('relayAgyBtn').textContent = st.agy ? '退出' : '登录';
   for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
   for (const b of $('relayGap').children) b.classList.toggle('on', +b.dataset.v === st.gap);
   for (const b of $('relayCap').children) b.classList.toggle('on', +b.dataset.v === st.cap);
@@ -1422,6 +1425,17 @@ $('relayPgBtn').onclick = async () => {
   } catch (e) {
     $('relayPg').textContent = e.message;
     $('relayPgBtn').textContent = '登录';
+  }
+};
+$('relayAgyBtn').onclick = async () => {
+  if (relay.agy) return showRelay(await relayCall('relayLogout', { provider: 'agy' }));
+  if (!await askRisk('agyRisk', 'AGY 走谷歌反重力（Antigravity）的登录来用 Gemini。用量过大可能被谷歌限制这个号的反重力权限，但一般不影响网页版 Gemini 和账号其他功能。', '登录')) return;
+  $('relayAgyBtn').textContent = '登录中…';
+  try {
+    showRelay(await relayCall('relayLogin', { provider: 'agy' }));
+  } catch (e) {
+    $('relayAgy').textContent = e.message;
+    $('relayAgyBtn').textContent = '登录';
   }
 };
 for (const id of ['relayParallel', 'relayGap', 'relayCap']) for (const b of $(id).children) b.onclick = async () => {

@@ -52,6 +52,7 @@ final class Relay {
     final List<Channel> channels = new ArrayList<>();
     final Codex codex;
     final Playground pg;
+    final Antigravity agy;
     private ServerSocket server;
     private Semaphore slots;
     private long lastStart, coolUntil;
@@ -60,8 +61,10 @@ final class Relay {
         prefs = ctx.getSharedPreferences("relay", Context.MODE_PRIVATE);
         codex = new Codex(this);
         pg = new Playground(this, ctx);
+        agy = new Antigravity(this);
         channels.add(codex);
         channels.add(pg);
+        channels.add(agy);
     }
 
     interface Callback {
