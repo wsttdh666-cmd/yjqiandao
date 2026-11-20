@@ -189,7 +189,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
       </div>
       <div class="row-web"><button class="add-alt" id="webLogin">没有账号密码？在 App 里登录</button><span class="type-line" id="webState"></span></div>
     </div>
-    <div id="keyBox"><label>密钥</label><input class="field" id="fKey" autocapitalize="off" autocomplete="off" placeholder="选填"></div>
+    <div><label>密钥</label><input class="field" id="fKey" autocapitalize="off" autocomplete="off" placeholder="选填"></div>
     <label>模型监控网址</label><input class="field" id="fMonitor" inputmode="url" autocapitalize="off" placeholder="选填">
     <div id="priceBox"><label>模型价格网址</label><input class="field" id="fPrice" inputmode="url" autocapitalize="off" placeholder="选填"></div>
   </div>
@@ -1044,7 +1044,6 @@ async function probe(url) {
   } catch { throw new Error('连不上这个网址'); }
   return null;
 }
-const manualKey = t => t === 'other' || t === 'wallet';
 let shownType = null;
 function showType(t) {
   shownType = t;
@@ -1054,7 +1053,6 @@ function showType(t) {
   $('priceBox').hidden = t !== 'panel';
   $('credBox').hidden = t === 'wallet' || t === 'other';
   $('webLogin').textContent = t === 'wallet' ? '在 App 里登录' : t === 'other' ? '在 App 里登录取密钥' : '没有账号密码？在 App 里登录';
-  $('keyBox').hidden = !manualKey(t);
 }
 let editKind = 'sign';
 function setKind(k) {
@@ -1168,7 +1166,7 @@ $('saveBtn').onclick = async () => {
     name: $('fName').value.trim() || new URL(url).hostname,
     user: type === 'other' ? '' : $('fUser').value.trim(),
     pass: type === 'other' ? '' : $('fPass').value,
-    key: manualKey(type) ? $('fKey').value.trim() : '',
+    key: $('fKey').value.trim(),
     price: type === 'panel' ? normUrl($('fPrice').value) : '',
     monitor: normUrl($('fMonitor').value),
   });
