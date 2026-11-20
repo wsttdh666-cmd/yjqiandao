@@ -2,15 +2,9 @@ package app.qiandao.hub;
 
 import android.net.Uri;
 import android.util.Base64;
-import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -33,7 +27,6 @@ final class Codex implements Relay.Channel {
 
     private final Relay relay;
     private JSONObject account;
-    private volatile ServerSocket waiting;
 
     Codex(Relay relay) {
         this.relay = relay;
@@ -51,6 +44,10 @@ final class Codex implements Relay.Channel {
 
     public boolean ready() {
         return account != null;
+    }
+
+    public String who() {
+        return "gpt:" + email();
     }
 
     public List<String> models() {
@@ -74,53 +71,17 @@ final class Codex implements Relay.Channel {
             relay.prefs.edit().putString("device", device).apply();
         }
         String deviceId = device;
-        if (waiting != null) waiting.close();
-        ServerSocket callback = new ServerSocket(1455, 4, InetAddress.getByName("127.0.0.1"));
-        callback.setSoTimeout(1800000);
-        waiting = callback;
-        new Thread(() -> {
-            String result;
-            boolean got = false;
-            try (ServerSocket server = callback) {
-                while (true) {
-                    try (Socket s = server.accept()) {
-                        s.setSoTimeout(3000);
-                        String[] first;
-                        try {
-                            BufferedInputStream in = new BufferedInputStream(s.getInputStream());
-                            first = Relay.line(in).split(" ");
-                            while (!Relay.line(in).isEmpty());
-                        } catch (SocketTimeoutException e) {
-                            continue;
-                        }
-                        if (first.length < 2 || !first[1].startsWith("/auth/callback")) continue;
-                        Uri u = Uri.parse("http://localhost" + first[1]);
-                        got = true;
-                        String page = "<meta name=viewport content='width=device-width'><h3 style='font-family:sans-serif;text-align:center;margin-top:30vh'>回到「一键签到」看结果</h3>";
-                        OutputStream out = s.getOutputStream();
-                        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n" + page).getBytes(StandardCharsets.UTF_8));
-                        out.flush();
-                        String code = u.getQueryParameter("code");
-                        if (!state.equals(u.getQueryParameter("state")) || code == null) {
-                            result = "登录没成功：" + u.getQueryParameter("error");
-                        } else {
-                            try {
-                                exchange(code, u.getQueryParameter("client_id"), verifier, deviceId);
-                                result = null;
-                            } catch (Relay.Upstream e) {
-                                if (!e.getMessage().contains("invalid_grant")) throw e;
-                                result = "OpenAI 不给用：这个号的 ChatGPT 套餐可能不支持（免费号不行），换个付费号再登";
-                            }
-                        }
-                        break;
-                    }
-                }
-            } catch (Exception e) {
-                if (waiting != callback) return;
-                result = !got && e instanceof SocketTimeoutException ? "等太久没登完，重新点登录" : "登录没成功：" + e.getMessage();
+        Relay.listen(1455, "/auth/callback", u -> {
+            String code = u.getQueryParameter("code");
+            if (!state.equals(u.getQueryParameter("state")) || code == null) return "登录没成功：" + u.getQueryParameter("error");
+            try {
+                exchange(code, u.getQueryParameter("client_id"), verifier, deviceId);
+                return null;
+            } catch (Relay.Upstream e) {
+                if (!e.getMessage().contains("invalid_grant")) throw e;
+                return "OpenAI 不给用：这个号的 ChatGPT 套餐可能不支持（免费号不行），换个付费号再登";
             }
-            done.accept(result);
-        }).start();
+        }, done);
         return AUTHORIZE + "?client_id=dynamic_agent_client&agent_name_hint=" + AGENT
             + "&ext_agent_host_id=" + Uri.encode("urn:uuid:" + device) + "&response_type=code&redirect_uri=" + Uri.encode(REDIRECT)
             + "&resource=" + Uri.encode(API) + "&scope=" + Uri.encode("openid profile email offline_access resource.invoke chatgpt.tokens.use.direct")
@@ -168,17 +129,6 @@ final class Codex implements Relay.Channel {
         return account.getString("access");
     }
 
-    private static String text(Object content) {
-        if (!(content instanceof JSONArray)) return content == null || content == JSONObject.NULL ? "" : content.toString();
-        StringBuilder s = new StringBuilder();
-        JSONArray parts = (JSONArray) content;
-        for (int i = 0; i < parts.length(); i++) {
-            JSONObject p = parts.optJSONObject(i);
-            if (p != null && "text".equals(p.optString("type"))) s.append(p.optString("text"));
-        }
-        return s.toString();
-    }
-
     public void chat(JSONObject req, Relay.Sink sink) throws Exception {
         StringBuilder instructions = new StringBuilder();
         JSONArray input = new JSONArray(), messages = req.optJSONArray("messages");
@@ -187,7 +137,7 @@ final class Codex implements Relay.Channel {
             String role = m.optString("role");
             Object content = m.opt("content");
             if (role.equals("system") || role.equals("developer")) {
-                instructions.append(text(content)).append("\n\n");
+                instructions.append(Relay.text(content)).append("\n\n");
                 continue;
             }
             boolean mine = role.equals("assistant");
@@ -205,7 +155,7 @@ final class Codex implements Relay.Channel {
                     }
                 }
             } else {
-                parts.put(new JSONObject().put("type", mine ? "output_text" : "input_text").put("text", text(content)));
+                parts.put(new JSONObject().put("type", mine ? "output_text" : "input_text").put("text", Relay.text(content)));
             }
             input.put(new JSONObject().put("role", mine ? "assistant" : "user").put("content", parts));
         }

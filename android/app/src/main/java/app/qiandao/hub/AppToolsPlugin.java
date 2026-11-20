@@ -66,6 +66,7 @@ public class AppToolsPlugin extends Plugin {
         s.put("key", Relay.key(prefs));
         s.put("parallel", prefs.getInt("parallel", 2));
         s.put("gap", prefs.getInt("gap", 3));
+        s.put("cap", prefs.getInt("cap", 50));
         if (r != null) s.put("gpt", r.codex.email());
         return s;
     }
@@ -92,6 +93,7 @@ public class AppToolsPlugin extends Plugin {
         getContext().getSharedPreferences("relay", android.content.Context.MODE_PRIVATE).edit()
             .putInt("parallel", call.getInt("parallel", 2))
             .putInt("gap", call.getInt("gap", 3))
+            .putInt("cap", call.getInt("cap", 50))
             .apply();
         if (Relay.running == null) {
             call.resolve(state());

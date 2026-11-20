@@ -2,6 +2,7 @@ package app.qiandao.hub;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +12,7 @@ import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -19,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
+import java.util.function.Consumer;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -28,6 +31,7 @@ final class Relay {
 
     interface Channel {
         boolean ready();
+        String who();
         List<String> models();
         boolean owns(String model);
         void chat(JSONObject req, Sink sink) throws Exception;
@@ -55,6 +59,88 @@ final class Relay {
         prefs = ctx.getSharedPreferences("relay", Context.MODE_PRIVATE);
         codex = new Codex(this);
         channels.add(codex);
+    }
+
+    interface Callback {
+        String got(Uri url) throws Exception;
+    }
+
+    private static final Map<Integer, ServerSocket> waiting = new HashMap<>();
+
+    static void listen(int port, String path, Callback callback, Consumer<String> done) throws IOException {
+        ServerSocket server;
+        synchronized (waiting) {
+            ServerSocket old = waiting.remove(port);
+            if (old != null) old.close();
+            server = new ServerSocket(port, 4, InetAddress.getByName("127.0.0.1"));
+            server.setSoTimeout(1800000);
+            waiting.put(port, server);
+        }
+        new Thread(() -> {
+            String result;
+            boolean got = false;
+            try (ServerSocket ss = server) {
+                while (true) {
+                    try (Socket s = ss.accept()) {
+                        s.setSoTimeout(3000);
+                        String[] first;
+                        try {
+                            InputStream in = new BufferedInputStream(s.getInputStream());
+                            first = line(in).split(" ");
+                            while (!line(in).isEmpty());
+                        } catch (SocketTimeoutException e) {
+                            continue;
+                        }
+                        if (first.length < 2 || !first[1].startsWith(path)) continue;
+                        got = true;
+                        String page = "<meta name=viewport content='width=device-width'><h3 style='font-family:sans-serif;text-align:center;margin-top:30vh'>回到「一键签到」看结果</h3>";
+                        OutputStream out = s.getOutputStream();
+                        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n" + page).getBytes(StandardCharsets.UTF_8));
+                        out.flush();
+                        result = callback.got(Uri.parse("http://localhost" + first[1]));
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                synchronized (waiting) {
+                    if (waiting.get(port) != server) return;
+                }
+                result = !got && e instanceof SocketTimeoutException ? "等太久没登完，重新点登录" : "登录没成功：" + e.getMessage();
+            }
+            synchronized (waiting) {
+                waiting.remove(port);
+            }
+            done.accept(result);
+        }).start();
+    }
+
+    static String text(Object content) {
+        if (!(content instanceof JSONArray)) return content == null || content == JSONObject.NULL ? "" : content.toString();
+        StringBuilder s = new StringBuilder();
+        JSONArray parts = (JSONArray) content;
+        for (int i = 0; i < parts.length(); i++) {
+            JSONObject p = parts.optJSONObject(i);
+            if (p != null && "text".equals(p.optString("type"))) s.append(p.optString("text"));
+        }
+        return s.toString();
+    }
+
+    synchronized int spent(String who, boolean add) {
+        String day = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new java.util.Date());
+        JSONObject used = new JSONObject();
+        try {
+            used = new JSONObject(prefs.getString("used", "{}"));
+        } catch (Exception ignored) {
+        }
+        if (!day.equals(used.optString("day"))) used = new JSONObject();
+        int n = used.optInt(who) + (add ? 1 : 0);
+        if (add) {
+            try {
+                prefs.edit().putString("used", used.put("day", day).put(who, n).toString()).apply();
+            } catch (Exception ignored) {
+            }
+        }
+        return n;
     }
 
     static String random(int bytes) {
@@ -192,6 +278,11 @@ final class Relay {
             Sink.error(out, 404, "没有这个模型，或者对应的账号还没登录：" + model);
             return;
         }
+        int cap = prefs.getInt("cap", 50);
+        if (cap > 0 && spent(channel.who(), false) >= cap) {
+            Sink.error(out, 429, "这个号今天已经用了 " + cap + " 次，到每日上限了，明天再用（上限可以在订阅转接里调）");
+            return;
+        }
         long wait = coolUntil - System.currentTimeMillis();
         if (wait > 0) {
             Sink.error(out, 429, "额度用完了，" + (wait / 60000 + 1) + " 分钟后再试");
@@ -204,6 +295,7 @@ final class Relay {
                 if (gap > 0) Thread.sleep(gap);
                 lastStart = System.currentTimeMillis();
             }
+            spent(channel.who(), true);
             Sink sink = new Sink(out, req.optBoolean("stream"), model);
             try {
                 channel.chat(req, sink);

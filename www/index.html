@@ -217,6 +217,8 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
     <label>间隔</label>
     <div class="seg" id="relayGap"><button data-v="0">不等</button><button data-v="3">3 秒</button><button data-v="5">5 秒</button><button data-v="10">10 秒</button></div>
+    <label>每日上限</label>
+    <div class="seg" id="relayCap"><button data-v="50">50 次</button><button data-v="100">100 次</button><button data-v="200">200 次</button><button data-v="0">不限</button></div>
   </div>
 </div>
 
@@ -237,7 +239,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 
 <div class="dialog" id="pwDialog"><div class="box"><p id="pwTitle"></p><div class="pw"><input class="field" id="pwInput" type="password" autocomplete="off"><button class="eye" id="pwEye">👁</button></div><div class="row"><button id="pwNo">取消</button><button class="primary" id="pwYes">确定</button></div></div></div>
 <div class="dialog" id="riskDialog"><div class="box">
-  <p>订阅转接会拿你登录的账号额度给酒馆用。GPT 用的是 OpenAI 给第三方应用的登录方式；谷歌的几个渠道都不是官方允许的用法，账号可能被限制或封禁。建议用不重要的号，别高强度用，别分享给别人。</p>
+  <p>订阅转接会拿你登录的 ChatGPT 付费号额度给酒馆用，走的是 OpenAI 给第三方应用的官方登录。用量过大或分享给别人，账号仍可能被限制。</p>
   <label class="check"><input type="checkbox" id="riskOk">我知道可能被封号，后果自己承担</label>
   <div class="row"><button id="riskNo">取消</button><button class="primary" id="riskYes" disabled>开启</button></div>
 </div></div>
@@ -1350,6 +1352,7 @@ function showRelay(st) {
   $('relayGptBtn').textContent = st.gpt ? '退出' : '登录';
   for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
   for (const b of $('relayGap').children) b.classList.toggle('on', +b.dataset.v === st.gap);
+  for (const b of $('relayCap').children) b.classList.toggle('on', +b.dataset.v === st.cap);
   const site = sites.find(x => x.url === RELAY_URL);
   if (site) setCard(site, st.running ? '运行中' : '没开', st.running ? 'ok' : '', '');
 }
@@ -1397,9 +1400,9 @@ $('relayGptBtn').onclick = async () => {
     $('relayGptBtn').textContent = '登录';
   }
 };
-for (const id of ['relayParallel', 'relayGap']) for (const b of $(id).children) b.onclick = async () => {
+for (const id of ['relayParallel', 'relayGap', 'relayCap']) for (const b of $(id).children) b.onclick = async () => {
   for (const x of $(id).children) x.classList.toggle('on', x === b);
-  showRelay(await relayCall('relaySet', { parallel: +$('relayParallel').querySelector('.on').dataset.v, gap: +$('relayGap').querySelector('.on').dataset.v }));
+  showRelay(await relayCall('relaySet', { parallel: +$('relayParallel').querySelector('.on').dataset.v, gap: +$('relayGap').querySelector('.on').dataset.v, cap: +$('relayCap').querySelector('.on').dataset.v }));
 };
 $('copyCode').onclick = () => copyText($('devCode').textContent, $('copyCode'));
 $('actBtn').onclick = async () => {
