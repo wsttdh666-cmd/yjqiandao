@@ -1036,7 +1036,9 @@ async function probe(url) {
     const st = (await req(url + '/api/status')).j;
     if (st.success) return { type: 'newapi', checkin: (st.data || {}).checkin_enabled };
     if ((await req(url + '/api/' + Math.random().toString(36).slice(2))).status === 401) return null;
-    if ((await req(url + '/api/checkin/status')).status === 401) return { type: 'panel' };
+    // 官方接口（DeepSeek 这类）哪里都回 401「没带密钥」，带 error 对象，不是签到面板
+    const c = await req(url + '/api/checkin/status');
+    if (c.status === 401 && typeof c.j.error !== 'object') return { type: 'panel' };
     if ((await req(url + '/api/user/checkin/status')).status === 401) return { type: 'imgsite' };
     if ((await req(url + '/api/me')).status === 401 && (await req(url + '/api/wallet/claim/daily', { method: 'POST' })).status === 401) return { type: 'wallet' };
   } catch { throw new Error('连不上这个网址'); }
