@@ -147,6 +147,11 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .dialog .row .primary { background: var(--accent); color: #fff; }
 .dialog .row .primary:disabled { opacity: .4; }
 .dialog .check { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; color: var(--text); font-size: 14px; }
+.ckhelp { background: var(--field); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: 13px; color: var(--sub); }
+.ckhelp ol { margin: 0; padding-left: 18px; }
+.ckhelp li { margin: 3px 0; }
+.ckhelp .ckbtns { display: flex; gap: 8px; margin-top: 10px; }
+.ckhelp .ckbtns button { flex: 1; }
 </style>
 </head>
 <body>
@@ -243,6 +248,17 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 </div>
 
 <div class="dialog" id="pwDialog"><div class="box"><p id="pwTitle"></p><div class="pw"><input class="field" id="pwInput" type="password" autocomplete="off"><button class="eye" id="pwEye">👁</button></div><div class="row"><button id="pwNo">取消</button><button class="primary" id="pwYes">确定</button></div></div></div>
+<div class="dialog" id="cookieDialog"><div class="box">
+  <p id="ckTitle"></p>
+  <div class="ckhelp"><ol>
+    <li>电脑浏览器打开网站，登录谷歌</li>
+    <li>装插件 Cookie-Editor（下面按钮直达）</li>
+    <li>在网站页面点插件 → Export → 选 JSON，会自动复制</li>
+    <li>把复制的发到手机，长按下面的框粘贴</li>
+  </ol><div class="ckbtns"><button class="small-btn" id="ckOpen">打开网站</button><button class="small-btn" id="ckPlugin">装 Cookie-Editor</button></div></div>
+  <div class="pw"><input class="field" id="ckInput" type="password" autocomplete="off"><button class="eye" id="ckEye">👁</button></div>
+  <div class="row"><button id="ckNo">取消</button><button class="primary" id="ckYes">确定</button></div>
+</div></div>
 <div class="dialog" id="riskDialog"><div class="box">
   <p id="riskText"></p>
   <label class="check"><input type="checkbox" id="riskOk">我知道可能被封号，后果自己承担</label>
@@ -1299,6 +1315,20 @@ function askPassword(title) {
   });
 }
 $('pwEye').onclick = () => { $('pwInput').type = $('pwInput').type === 'password' ? 'text' : 'password'; };
+function askCookie(site) {
+  $('ckTitle').textContent = '粘贴 ' + site + ' 的 Cookie';
+  $('ckInput').value = '';
+  $('ckInput').type = 'password';
+  $('ckOpen').onclick = () => openBrowser('https://' + site);
+  $('cookieDialog').classList.add('open');
+  return new Promise(done => {
+    const close = v => { $('cookieDialog').classList.remove('open'); done(v); };
+    $('ckNo').onclick = () => close(null);
+    $('ckYes').onclick = () => $('ckInput').value.trim() ? close($('ckInput').value.trim()) : $('ckInput').focus();
+  });
+}
+$('ckEye').onclick = () => { $('ckInput').type = $('ckInput').type === 'password' ? 'text' : 'password'; };
+$('ckPlugin').onclick = () => openBrowser('https://cookie-editor.com');
 const flash = (btn, text) => { btn.textContent = text; setTimeout(() => { btn.textContent = btn.dataset.label; }, 1800); };
 const b64 = a => btoa(Array.from(a, c => String.fromCharCode(c)).join(''));
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -1422,7 +1452,7 @@ $('relayGptBtn').onclick = async () => {
 $('relayPgBtn').onclick = async () => {
   if (relay.pg) return showRelay(await relayCall('relayLogout', { provider: 'pg' }));
   if (!await askRisk('pgRisk', 'PG 用你自己谷歌号在 AI Studio 网页上的免费额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制这个号用 AI Studio，甚至封号。', '登录')) return;
-  const cookie = await askPassword('粘贴 aistudio.google.com 的 Cookie');
+  const cookie = await askCookie('aistudio.google.com');
   if (!cookie) return;
   $('relayPgBtn').textContent = '登录中…';
   try {
@@ -1435,7 +1465,7 @@ $('relayPgBtn').onclick = async () => {
 $('relayWebBtn').onclick = async () => {
   if (relay.web) return showRelay(await relayCall('relayLogout', { provider: 'web' }));
   if (!await askRisk('webRisk', '网页版用你自己谷歌号在 gemini.google.com 上聊天的额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制甚至封这个号。', '登录')) return;
-  const cookie = await askPassword('粘贴 gemini.google.com 的 Cookie');
+  const cookie = await askCookie('gemini.google.com');
   if (!cookie) return;
   $('relayWebBtn').textContent = '登录中…';
   try {
