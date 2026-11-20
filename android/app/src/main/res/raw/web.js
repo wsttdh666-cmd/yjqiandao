@@ -8,6 +8,7 @@
   } catch (e) {}
   const post = (...a) => WebBridge.post(JSON.stringify(a));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let current;
   const wait = async (fn, ms) => {
     for (const end = Date.now() + ms; Date.now() < end; await sleep(200)) {
       const v = fn();
@@ -48,7 +49,11 @@
         post('broken', String(e.message || e));
       }
     },
+    stop(id) {
+      if (current === id) current = null;
+    },
     async run(id, prompt) {
+      current = id;
       try {
         const reset = newChat();
         if (reset) {
@@ -72,7 +77,7 @@
         post('log', '已点发送，等回复…');
 
         let sent = '', stable = 0, started = false;
-        for (let i = 0; i < 1600; i++) {
+        for (let i = 0; i < 1600 && current === id; i++) {
           await sleep(250);
           const text = lastAnswer();
           if (text && text !== sent) {

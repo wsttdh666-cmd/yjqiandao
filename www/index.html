@@ -122,6 +122,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .log.bad .ld { color: var(--bad); }
 #keyBody .gtitle { margin: 14px 0 0; }
 #keyBody .gtitle:first-child { margin-top: 2px; }
+.keyrow[hidden] { display: none; }
 .keyrow { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .keyrow .main { flex: 1; min-width: 0; }
 .keyrow .kt { font-size: 14px; font-weight: 600; }
@@ -224,6 +225,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <label>页面转接</label>
     <div class="keyrow"><div class="main"><div class="kt">Gemini · AI Studio</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgBtn">登录</button></div>
     <div class="keyrow"><div class="main"><div class="kt">Gemini · 网页版</div><div class="ks" id="relayWeb"></div></div><button class="small-btn" id="relayWebBtn">登录</button></div>
+    <div class="keyrow" id="relayHiddenRow"><div class="main"><div class="kt">用不了的模型</div><div class="ks" id="relayHidden"></div></div><button class="small-btn" id="relayRecheck">重新检查</button></div>
     <label>并发</label>
     <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
     <label>间隔</label>
@@ -1189,21 +1191,22 @@ $('saveBtn').onclick = async () => {
   closeSheets();
   refreshSite(s);
 };
-$('delBtn').onclick = () => {
-  $('dialogText').textContent = '删除「' + editing.name + '」？';
+function confirmBox(text, yes, fn) {
+  $('dialogText').textContent = text;
+  $('dlgYes').textContent = yes;
+  $('dlgYes').onclick = () => { $('dialog').classList.remove('open'); fn(); };
   $('dialog').classList.add('open');
-};
-$('dlgNo').onclick = () => $('dialog').classList.remove('open');
-$('dlgYes').onclick = () => {
+}
+$('delBtn').onclick = () => confirmBox('删除「' + editing.name + '」？', '删除', () => {
   sites = sites.filter(x => x !== editing);
   save();
   clearInfo(editing.id);
   saveInfo();
   $('c_' + editing.id).remove();
   if (!sites.length) renderList(); else updateGroups();
-  $('dialog').classList.remove('open');
   closeSheets();
-};
+});
+$('dlgNo').onclick = () => $('dialog').classList.remove('open');
 
 // ---------- 弹层 ----------
 function openSheet(id) { $('mask').classList.add('open'); $(id).classList.add('open'); }
@@ -1228,6 +1231,8 @@ async function verify(code, act) {
 function unlock() {
   $('gate').classList.remove('open');
   renderList();
+  // 开过一次转接就一直开着：App 被系统关掉、手机重启后打开 App 自动接上
+  if (localStorage.getItem('relayOn')) relayCall('relayState').then(st => st.running || relayOn());
   for (const s of sites) {
     if (A[s.type]) { refreshSite(s); continue; }
     detect(s.url).then(r => {
@@ -1399,6 +1404,8 @@ function showRelay(st) {
   $('relayAgyBtn').textContent = st.agy ? '退出' : '登录';
   $('relayWeb').textContent = st.web || '没登录';
   $('relayWebBtn').textContent = st.web ? '退出' : '登录';
+  $('relayHiddenRow').hidden = !st.hidden;
+  $('relayHidden').textContent = '已隐藏 ' + st.hidden + ' 个';
   for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
   for (const b of $('relayGap').children) b.classList.toggle('on', +b.dataset.v === st.gap);
   for (const b of $('relayCap').children) b.classList.toggle('on', +b.dataset.v === st.cap);
@@ -1417,7 +1424,9 @@ function addRelaySite() {
 }
 async function relayOn() {
   showRelay(await relayCall('relay', { on: true }));
-  if (relay.running) addRelaySite();
+  if (!relay.running) return;
+  localStorage.setItem('relayOn', '1');
+  addRelaySite();
 }
 $('relayBtn').onclick = async () => {
   openSheet('relaySheet');
@@ -1442,11 +1451,15 @@ function askRisk(key, text, action) {
 }
 $('riskOk').onchange = () => { $('riskYes').disabled = !$('riskOk').checked; };
 $('relayPower').onclick = async () => {
-  if (relay.running) return showRelay(await relayCall('relay', { on: false }));
+  if (relay.running) return confirmBox('关掉后酒馆就连不上了，确定关闭？', '关闭', async () => {
+    localStorage.removeItem('relayOn');
+    showRelay(await relayCall('relay', { on: false }));
+  });
   if (await askRisk('relayRisk', '官方转接会拿你登录的 ChatGPT 付费号额度给酒馆用，走的是 OpenAI 给第三方应用的官方登录。用量过大或分享给别人，账号仍可能被限制。', '开启')) relayOn();
 };
 $('relayUrlCopy').onclick = e => copyText(relay.url, e.target);
 $('relayKeyCopy').onclick = e => copyText(relay.key, e.target);
+$('relayRecheck').onclick = async () => showRelay(await relayCall('relayRecheck'));
 $('relayGptBtn').onclick = async () => {
   if (relay.gpt) return showRelay(await relayCall('relayLogout', { provider: 'gpt' }));
   $('relayGptBtn').textContent = '登录中…';

@@ -17,9 +17,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import org.json.JSONArray;
@@ -55,8 +57,17 @@ final class Relay {
     final Antigravity agy;
     final GeminiWeb web;
     private ServerSocket server;
-    private Semaphore slots;
-    private long lastStart, coolUntil;
+    // 每条线各排各的队：pg 卡住不耽误网页；一条线 429 也只冷却它自己
+    private final Map<Channel, Lane> lanes = new HashMap<>();
+
+    private static final class Lane {
+        final Semaphore slots;
+        long lastStart, coolUntil;
+
+        Lane(int n) {
+            slots = new Semaphore(n, true);
+        }
+    }
 
     Relay(Context ctx) {
         prefs = ctx.getSharedPreferences("relay", Context.MODE_PRIVATE);
@@ -184,7 +195,8 @@ final class Relay {
     }
 
     void start() throws IOException {
-        slots = new Semaphore(prefs.getInt("parallel", 2), true);
+        // 网页版是在同一个页面里打字发送，同时两个会互相打乱
+        for (Channel c : channels) lanes.put(c, new Lane(c == web ? 1 : prefs.getInt("parallel", 2)));
         server = new ServerSocket(PORT, 16, InetAddress.getByName("127.0.0.1"));
         running = this;
         new Thread(() -> {
@@ -263,6 +275,15 @@ final class Relay {
             } else if (method.equals("GET") && path.endsWith("/models")) {
                 models(out);
             } else if (method.equals("POST") && path.endsWith("/chat/completions")) {
+                // 请求发完对方就不会再发东西了，读到头说明酒馆那边取消 / 断开了：不再排队、不再等上游
+                Thread worker = Thread.currentThread();
+                new Thread(() -> {
+                    try {
+                        while (in.read() >= 0) ;
+                    } catch (IOException ignored) {
+                    }
+                    worker.interrupt();
+                }).start();
                 chat(new JSONObject(new String(body, StandardCharsets.UTF_8)), out);
             } else {
                 Sink.error(out, 404, "没有这个接口");
@@ -273,9 +294,10 @@ final class Relay {
 
     private void models(OutputStream out) throws Exception {
         JSONArray data = new JSONArray();
+        Set<String> bad = prefs.getStringSet("bad", new HashSet<>());
         for (Channel c : channels) {
             if (!c.ready()) continue;
-            for (String m : c.models()) data.put(new JSONObject().put("id", m).put("object", "model").put("owned_by", "relay"));
+            for (String m : c.models()) if (!bad.contains(m)) data.put(new JSONObject().put("id", m).put("object", "model").put("owned_by", "relay"));
         }
         Sink.json(out, 200, new JSONObject().put("object", "list").put("data", data));
     }
@@ -293,17 +315,18 @@ final class Relay {
             Sink.error(out, 429, "这个号今天已经用了 " + cap + " 次，到每日上限了，明天再用（上限可以在订阅转接里调）");
             return;
         }
-        long wait = coolUntil - System.currentTimeMillis();
+        Lane lane = lanes.get(channel);
+        long wait = lane.coolUntil - System.currentTimeMillis();
         if (wait > 0) {
             Sink.error(out, 429, "额度用完了，" + (wait / 60000 + 1) + " 分钟后再试");
             return;
         }
-        slots.acquire();
+        lane.slots.acquire();
         try {
-            synchronized (this) {
-                long gap = lastStart + prefs.getInt("gap", 3) * 1000L - System.currentTimeMillis();
+            synchronized (lane) {
+                long gap = lane.lastStart + prefs.getInt("gap", 3) * 1000L - System.currentTimeMillis();
                 if (gap > 0) Thread.sleep(gap);
-                lastStart = System.currentTimeMillis();
+                lane.lastStart = System.currentTimeMillis();
             }
             spent(channel.who(), true);
             Sink sink = new Sink(out, req.optBoolean("stream"), model);
@@ -311,13 +334,19 @@ final class Relay {
                 channel.chat(req, sink);
                 sink.finish();
             } catch (Upstream e) {
-                if (e.code == 429) coolUntil = System.currentTimeMillis() + Math.max(e.retryMs, 60000);
+                if (e.code == 429) lane.coolUntil = System.currentTimeMillis() + Math.max(e.retryMs, 60000);
+                // 这个号没权限用 / 没有这个模型：记下来，下次拉取就不列了（转接面板里能重新检查）
+                if (e.code == 403 || e.code == 404) synchronized (prefs) {
+                    Set<String> bad = new HashSet<>(prefs.getStringSet("bad", new HashSet<>()));
+                    bad.add(model);
+                    prefs.edit().putStringSet("bad", bad).apply();
+                }
                 sink.fail(e.code, e.getMessage());
             } catch (Exception e) {
                 sink.fail(502, "连不上：" + e.getMessage());
             }
         } finally {
-            slots.release();
+            lane.slots.release();
         }
     }
 

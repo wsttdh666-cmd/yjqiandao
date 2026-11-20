@@ -225,6 +225,9 @@ final class GeminiWeb implements Relay.Channel {
             }
         } finally {
             pending.remove(key);
+            main.post(() -> {
+                if (web != null) web.evaluateJavascript("__web.stop(" + JSONObject.quote(key) + ")", null);
+            });
         }
     }
 }

@@ -306,6 +306,10 @@ final class Playground implements Relay.Channel {
             }
         } finally {
             pending.remove(key);
+            // 酒馆取消了也要叫停网页里那个还在等谷歌的请求
+            main.post(() -> {
+                if (web != null) web.evaluateJavascript("__pg.stop(" + JSONObject.quote(key) + ")", null);
+            });
         }
     }
 

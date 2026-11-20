@@ -68,6 +68,7 @@ public class AppToolsPlugin extends Plugin {
         s.put("parallel", prefs.getInt("parallel", 2));
         s.put("gap", prefs.getInt("gap", 3));
         s.put("cap", prefs.getInt("cap", 50));
+        s.put("hidden", prefs.getStringSet("bad", new java.util.HashSet<>()).size());
         if (r != null) {
             s.put("gpt", r.codex.email());
             s.put("pg", r.pg.status());
@@ -100,6 +101,12 @@ public class AppToolsPlugin extends Plugin {
 
     @PluginMethod
     public void relayState(PluginCall call) {
+        call.resolve(state());
+    }
+
+    @PluginMethod
+    public void relayRecheck(PluginCall call) {
+        getContext().getSharedPreferences("relay", android.content.Context.MODE_PRIVATE).edit().remove("bad").apply();
         call.resolve(state());
     }
 

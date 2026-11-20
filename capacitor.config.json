@@ -2,6 +2,7 @@
   "appId": "app.qiandao.hub",
   "appName": "一键签到",
   "webDir": "www",
+  "loggingBehavior": "none",
   "plugins": {
     "CapacitorHttp": { "enabled": true }
   }

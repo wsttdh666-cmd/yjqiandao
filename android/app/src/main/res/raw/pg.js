@@ -4,6 +4,7 @@
   const post = (...a) => PgBridge.post(JSON.stringify(a));
   const fetch0 = window.fetch;
   let service, snapshot, template, armed = true, lock = Promise.resolve();
+  const runs = {};
 
   const hex = async (algo, text) => [...new Uint8Array(await crypto.subtle.digest(algo, new TextEncoder().encode(text)))]
     .map(b => b.toString(16).padStart(2, '0')).join('');
@@ -80,19 +81,25 @@
         post('broken', String(e.message || e));
       }
     },
+    stop(id) {
+      if (runs[id]) runs[id].abort();
+    },
     async run(id, wire) {
+      const ctl = runs[id] = new AbortController();
       try {
         const text = [];
         for (const c of wire[1]) for (const p of c[0]) text.push(typeof p[1] === 'string' ? p[1] : p[2] ? p[2][1] : '');
         const digest = await hex('SHA-256', text.join(' '));
         wire[4] = await (lock = lock.catch(() => {}).then(() => snapshot(service, digest)));
-        const r = await fetch0(API + 'GenerateContent', { method: 'POST', headers: await headers(), body: JSON.stringify(wire), credentials: 'include' });
+        const r = await fetch0(API + 'GenerateContent', { method: 'POST', headers: await headers(), body: JSON.stringify(wire), credentials: 'include', signal: ctl.signal });
         if (!r.ok) return post('fail', id, r.status, (await r.text()).slice(0, 1000));
         const reader = r.body.getReader(), dec = new TextDecoder();
         for (let x; !(x = await reader.read()).done;) post('chunk', id, dec.decode(x.value, { stream: true }));
         post('end', id);
       } catch (e) {
         post('fail', id, 502, String(e.message || e));
+      } finally {
+        delete runs[id];
       }
     }
   };
