@@ -67,7 +67,10 @@ public class AppToolsPlugin extends Plugin {
         s.put("parallel", prefs.getInt("parallel", 2));
         s.put("gap", prefs.getInt("gap", 3));
         s.put("cap", prefs.getInt("cap", 50));
-        if (r != null) s.put("gpt", r.codex.email());
+        if (r != null) {
+            s.put("gpt", r.codex.email());
+            s.put("pg", r.pg.email());
+        }
         return s;
     }
 
@@ -114,6 +117,13 @@ public class AppToolsPlugin extends Plugin {
             call.reject("先开启订阅转接");
             return;
         }
+        if ("pg".equals(call.getString("provider"))) {
+            r.pg.login(call.getString("cookie", ""), error -> {
+                if (error == null) call.resolve(state());
+                else call.reject(error);
+            });
+            return;
+        }
         try {
             String url = r.codex.begin(error -> {
                 if (error == null) call.resolve(state());
@@ -128,7 +138,9 @@ public class AppToolsPlugin extends Plugin {
     @PluginMethod
     public void relayLogout(PluginCall call) {
         try {
-            if (Relay.running != null) Relay.running.codex.logout();
+            Relay r = Relay.running;
+            if (r != null && "pg".equals(call.getString("provider"))) r.pg.logout();
+            else if (r != null) r.codex.logout();
             call.resolve(state());
         } catch (Exception e) {
             call.reject(e.getMessage());

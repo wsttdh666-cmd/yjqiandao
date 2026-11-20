@@ -51,6 +51,7 @@ final class Relay {
     final SharedPreferences prefs;
     final List<Channel> channels = new ArrayList<>();
     final Codex codex;
+    final Playground pg;
     private ServerSocket server;
     private Semaphore slots;
     private long lastStart, coolUntil;
@@ -58,7 +59,9 @@ final class Relay {
     Relay(Context ctx) {
         prefs = ctx.getSharedPreferences("relay", Context.MODE_PRIVATE);
         codex = new Codex(this);
+        pg = new Playground(this, ctx);
         channels.add(codex);
+        channels.add(pg);
     }
 
     interface Callback {
@@ -192,6 +195,7 @@ final class Relay {
 
     void stop() {
         running = null;
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(pg::close);
         try {
             server.close();
         } catch (IOException ignored) {

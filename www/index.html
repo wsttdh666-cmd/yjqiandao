@@ -213,6 +213,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <div class="keyrow"><div class="main"><div class="kt">调用地址</div><div class="ks" id="relayUrl"></div></div><button class="small-btn" id="relayUrlCopy">复制</button></div>
     <div class="keyrow"><div class="main"><div class="kt">密钥</div><div class="ks" id="relayKey"></div></div><button class="small-btn" id="relayKeyCopy">复制</button></div>
     <div class="keyrow"><div class="main"><div class="kt">GPT</div><div class="ks" id="relayGpt"></div></div><button class="small-btn" id="relayGptBtn">登录</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">PG</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgBtn">登录</button></div>
     <label>并发</label>
     <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
     <label>间隔</label>
@@ -239,9 +240,9 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 
 <div class="dialog" id="pwDialog"><div class="box"><p id="pwTitle"></p><div class="pw"><input class="field" id="pwInput" type="password" autocomplete="off"><button class="eye" id="pwEye">👁</button></div><div class="row"><button id="pwNo">取消</button><button class="primary" id="pwYes">确定</button></div></div></div>
 <div class="dialog" id="riskDialog"><div class="box">
-  <p>订阅转接会拿你登录的 ChatGPT 付费号额度给酒馆用，走的是 OpenAI 给第三方应用的官方登录。用量过大或分享给别人，账号仍可能被限制。</p>
+  <p id="riskText"></p>
   <label class="check"><input type="checkbox" id="riskOk">我知道可能被封号，后果自己承担</label>
-  <div class="row"><button id="riskNo">取消</button><button class="primary" id="riskYes" disabled>开启</button></div>
+  <div class="row"><button id="riskNo">取消</button><button class="primary" id="riskYes" disabled></button></div>
 </div></div>
 <div class="dialog" id="dialog"><div class="box"><p id="dialogText"></p><div class="row"><button id="dlgNo">取消</button><button class="del" id="dlgYes">删除</button></div></div></div>
 
@@ -1350,6 +1351,8 @@ function showRelay(st) {
   $('relayKey').textContent = maskKey(st.key);
   $('relayGpt').textContent = st.gpt || '没登录';
   $('relayGptBtn').textContent = st.gpt ? '退出' : '登录';
+  $('relayPg').textContent = st.pg || '没登录';
+  $('relayPgBtn').textContent = st.pg ? '退出' : '登录';
   for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
   for (const b of $('relayGap').children) b.classList.toggle('on', +b.dataset.v === st.gap);
   for (const b of $('relayCap').children) b.classList.toggle('on', +b.dataset.v === st.cap);
@@ -1374,19 +1377,27 @@ $('relayBtn').onclick = async () => {
   openSheet('relaySheet');
   showRelay(await relayCall('relayState'));
 };
-$('relayPower').onclick = async () => {
-  if (relay.running) return showRelay(await relayCall('relay', { on: false }));
-  if (localStorage.getItem('relayRisk')) return relayOn();
+function askRisk(key, text, action) {
+  if (localStorage.getItem(key)) return Promise.resolve(true);
+  $('riskText').textContent = text;
+  $('riskYes').textContent = action;
   $('riskOk').checked = false;
   $('riskYes').disabled = true;
   $('riskDialog').classList.add('open');
-};
+  return new Promise(done => {
+    const close = ok => {
+      $('riskDialog').classList.remove('open');
+      if (ok) localStorage.setItem(key, '1');
+      done(ok);
+    };
+    $('riskNo').onclick = () => close(false);
+    $('riskYes').onclick = () => close(true);
+  });
+}
 $('riskOk').onchange = () => { $('riskYes').disabled = !$('riskOk').checked; };
-$('riskNo').onclick = () => $('riskDialog').classList.remove('open');
-$('riskYes').onclick = () => {
-  localStorage.setItem('relayRisk', '1');
-  $('riskDialog').classList.remove('open');
-  relayOn();
+$('relayPower').onclick = async () => {
+  if (relay.running) return showRelay(await relayCall('relay', { on: false }));
+  if (await askRisk('relayRisk', '订阅转接会拿你登录的 ChatGPT 付费号额度给酒馆用，走的是 OpenAI 给第三方应用的官方登录。用量过大或分享给别人，账号仍可能被限制。', '开启')) relayOn();
 };
 $('relayUrlCopy').onclick = e => copyText(relay.url, e.target);
 $('relayKeyCopy').onclick = e => copyText(relay.key, e.target);
@@ -1398,6 +1409,19 @@ $('relayGptBtn').onclick = async () => {
   } catch (e) {
     $('relayGpt').textContent = e.message;
     $('relayGptBtn').textContent = '登录';
+  }
+};
+$('relayPgBtn').onclick = async () => {
+  if (relay.pg) return showRelay(await relayCall('relayLogout', { provider: 'pg' }));
+  if (!await askRisk('pgRisk', 'PG 用你自己谷歌号在 AI Studio 网页上的免费额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制这个号用 AI Studio，甚至封号。', '登录')) return;
+  const cookie = await askPassword('粘贴 aistudio.google.com 的 Cookie');
+  if (!cookie) return;
+  $('relayPgBtn').textContent = '登录中…';
+  try {
+    showRelay(await relayCall('relayLogin', { provider: 'pg', cookie }));
+  } catch (e) {
+    $('relayPg').textContent = e.message;
+    $('relayPgBtn').textContent = '登录';
   }
 };
 for (const id of ['relayParallel', 'relayGap', 'relayCap']) for (const b of $(id).children) b.onclick = async () => {
