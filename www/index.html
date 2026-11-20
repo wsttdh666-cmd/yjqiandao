@@ -580,11 +580,14 @@ function infoRow(r) {
   el.innerHTML = '<div class="main"><div class="kt"></div><div class="ks"></div></div><button class="small-btn">复制</button>';
   el.querySelector('.kt').textContent = r.title;
   el.querySelector('.ks').textContent = r.sub;
-  const btn = el.querySelector('button');
+  el.querySelector('button').onclick = e => copyText(r.text || r.open, e.target);
   if (r.open) {
-    btn.textContent = '打开';
-    btn.onclick = () => openBrowser(r.open);
-  } else btn.onclick = e => copyText(r.text, e.target);
+    const open = document.createElement('button');
+    open.className = 'small-btn';
+    open.textContent = '打开';
+    open.onclick = () => openBrowser(r.open);
+    el.appendChild(open);
+  }
   return el;
 }
 async function revealTokens(a) {
