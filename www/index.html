@@ -190,6 +190,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
       <div class="row-web"><button class="add-alt" id="webLogin">没有账号密码？在 App 里登录</button><span class="type-line" id="webState"></span></div>
     </div>
     <div><label>密钥</label><input class="field" id="fKey" autocapitalize="off" autocomplete="off" placeholder="选填"></div>
+    <label>调用地址</label><input class="field" id="fApi" inputmode="url" autocapitalize="off" placeholder="选填，空着就用网址加 /v1">
     <label>模型监控网址</label><input class="field" id="fMonitor" inputmode="url" autocapitalize="off" placeholder="选填">
     <div id="priceBox"><label>模型价格网址</label><input class="field" id="fPrice" inputmode="url" autocapitalize="off" placeholder="选填"></div>
   </div>
@@ -292,6 +293,7 @@ async function unsealed(k, empty) {
 }
 const save = () => sealed('sites', sites);
 const trimUrl = u => u.trim().replace(/\/+$/, '');
+const apiBase = s => s.api || s.url;
 const fmt = n => String(Number(Number(n).toFixed(4)));
 
 async function req(url, { method = 'GET', headers = {}, body } = {}) {
@@ -521,10 +523,16 @@ function makeCard(s) {
   el.querySelector('.models').hidden = !(s.type === 'newapi' || (s.type === 'panel' && s.price) || (s.type === 'wallet' && canLogin(s)) || s.key);
   el.querySelector('.models').onclick = e => { e.stopPropagation(); openModels(s); };
   el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
-  el.querySelector('.chip').onclick = e => {
-    if (e.target.textContent !== '去登录') return;
+  el.querySelector('.chip').onclick = async e => {
+    const t = e.target.textContent;
+    if (t === '去登录') {
+      e.stopPropagation();
+      return webLoginSite(s);
+    }
+    if (s.view || (t !== '未签' && t !== '出错')) return;
     e.stopPropagation();
-    webLoginSite(s);
+    await signOne(s);
+    if (pending.some(p => p.s === s)) openCaptcha();
   };
   el.onclick = () => pending.some(p => p.s === s) ? openCaptcha() : showInfo(s);
   return el;
@@ -567,7 +575,7 @@ async function signed(s, got) {
   setCard(s, '已签 ✓', 'ok', withToday(s, await A[s.type].balance(s).catch(() => '')));
 }
 async function keyBalance(s) {
-  const { status, j } = await req(s.url + '/user/balance', { headers: { Authorization: 'Bearer ' + s.key } });
+  const { status, j } = await req(apiBase(s) + '/user/balance', { headers: { Authorization: 'Bearer ' + s.key } });
   if (status === 401) throw new Error('密钥不对或已失效');
   if (status === 404) return '';
   if (!j.balance_infos) throw new Error('查余额失败（' + status + '）');
@@ -580,7 +588,7 @@ async function refreshSite(s) {
     const st = await Capacitor.nativePromise('AppTools', 'relayState');
     return setCard(s, st.running ? '运行中' : '没开', st.running ? 'ok' : '', '');
   }
-  if (s.type === 'other' && s.key) keyBalance(s).then(t => setCard(s, s.view ? '' : '需手动签', '', t), e => setCard(s, '出错', 'bad', e.message));
+  if (s.key && (s.type === 'other' || (s.view && !canLogin(s)))) keyBalance(s).then(t => setCard(s, s.view ? '' : '需手动签', '', t), e => setCard(s, '出错', 'bad', e.message));
   if (s.view) {
     if (!canLogin(s)) return;
     try {
@@ -658,7 +666,7 @@ async function revealTokens(a) {
 function infoSections(s) {
   const a = apiSite(s);
   const addr = (u, title = '调用地址') => ({ title, sub: u + '/v1', text: u + '/v1' });
-  const addrs = [addr((a || s).url), ...(s.type === 'panel' ? [] : s.alts || []).map(u => addr(u, '备用调用地址'))];
+  const addrs = [addr(a ? a.url : apiBase(s)), ...(s.type === 'panel' ? [] : s.alts || []).map(u => addr(u, '备用调用地址'))];
   const manual = s.key ? [{ title: '密钥', sub: maskKey(s.key), text: s.key }] : [];
   const secs = [
     { name: '网址', now: [s.url, ...(s.alts || [])].map((u, i) => ({ title: i ? '备用网址' : '网址', sub: u, open: u })) },
@@ -715,24 +723,26 @@ $('keyRefresh').onclick = () => infoNow && showInfo(infoNow, true);
 
 // ---------- 全部签到 ----------
 let pending = [];
+async function signOne(s) {
+  pending = pending.filter(p => p.s !== s);
+  const st = await refreshSite(s);
+  if (!st || st.done) return;
+  try {
+    if (st.captcha || st.code) {
+      pending.push({ s, needCode: st.code, cap: st.captcha ? await A[s.type].captcha(s) : null });
+      setCard(s, '待填验证码', 'wait');
+    } else {
+      const got = await A[s.type].sign(s);
+      await signed(s, got);
+    }
+  } catch (e) { failed(s, e); }
+}
 $('signAll').onclick = async () => {
   const btn = $('signAll');
   btn.disabled = true;
   btn.textContent = '签到中…';
   pending = [];
-  await Promise.all(sites.filter(s => !s.view).map(async s => {
-    const st = await refreshSite(s);
-    if (!st || st.done) return;
-    try {
-      if (st.captcha || st.code) {
-        pending.push({ s, needCode: st.code, cap: st.captcha ? await A[s.type].captcha(s) : null });
-        setCard(s, '待填验证码', 'wait');
-      } else {
-        const got = await A[s.type].sign(s);
-        await signed(s, got);
-      }
-    } catch (e) { failed(s, e); }
-  }));
+  await Promise.all(sites.filter(s => !s.view).map(signOne));
   btn.disabled = false;
   btn.textContent = '全部签到';
   if (pending.length) openCaptcha();
@@ -812,7 +822,7 @@ const favs = new Set(JSON.parse(localStorage.getItem('favs') || '[]'));
 const modelCache = {};
 async function keyModels(s) {
   const [{ status, j }, mon] = await Promise.all([
-    req(s.url + '/v1/models', { headers: { Authorization: 'Bearer ' + s.key } }),
+    req(apiBase(s) + '/v1/models', { headers: { Authorization: 'Bearer ' + s.key } }),
     s.monitor ? loadMonitor(trimUrl(s.monitor)) : {},
   ]);
   if (status === 401) throw new Error('密钥不对或已失效');
@@ -944,9 +954,9 @@ async function loadLogs(s) {
   }
   const a = apiSite(s);
   if (!a) {
-    const r = await req(s.url + '/api/log/token', { headers: { Authorization: 'Bearer ' + s.key } });
+    const r = await req(apiBase(s) + '/api/log/token', { headers: { Authorization: 'Bearer ' + s.key } });
     if (!r.j.success) throw new Error('这个站不提供日志');
-    return newApiLogs(r.j.data || [], await currency(s.url));
+    return newApiLogs(r.j.data || [], await currency(apiBase(s)));
   }
   const page = type => call(a, '/api/log/self/?p=1&page_size=30&type=' + type).then(r => {
     if (!r.j.success) throw new Error(r.j.message || '拿不到日志');
@@ -1048,6 +1058,7 @@ const normUrl = u => {
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
   try { return new URL(u).origin; } catch { return u; }
 };
+const normApi = u => (u = u.trim()) && (/^https?:\/\//i.test(u) ? u : 'https://' + u).replace(/\/+$/, '').replace(/\/v1$/, '');
 async function detect(url) {
   const r = await probe(url);
   if (!r) throw new Error('认不出这个站');
@@ -1166,6 +1177,7 @@ function openEdit(s) {
   $('webState').textContent = s && s.web ? '已登录 ✓' : '';
   $('fPrice').value = (s && s.price) || '';
   $('fMonitor').value = (s && s.monitor) || '';
+  $('fApi').value = (s && s.api) || '';
   openSheet('editSheet');
 }
 $('addBtn').onclick = () => openEdit(null);
@@ -1191,6 +1203,7 @@ $('saveBtn').onclick = async () => {
     key: $('fKey').value.trim(),
     price: type === 'panel' ? normUrl($('fPrice').value) : '',
     monitor: normUrl($('fMonitor').value),
+    api: normApi($('fApi').value),
   });
   if (loginChanged) { delete s.token; delete s.uid; delete s.access; }
   if (webStore) applyWeb(s, webStore);
