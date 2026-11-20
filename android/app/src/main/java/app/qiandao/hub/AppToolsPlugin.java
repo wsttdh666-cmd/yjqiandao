@@ -2,9 +2,6 @@ package app.qiandao.hub;
 
 import android.content.Intent;
 import android.net.Uri;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
-import android.util.Base64;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -18,11 +15,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyStore;
-import javax.crypto.Cipher;
-import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
 
 @CapacitorPlugin(name = "AppTools")
 public class AppToolsPlugin extends Plugin {
@@ -65,29 +57,87 @@ public class AppToolsPlugin extends Plugin {
         }).start();
     }
 
-    private static SecretKey dataKey() throws Exception {
-        KeyStore store = KeyStore.getInstance("AndroidKeyStore");
-        store.load(null);
-        if (store.containsAlias("data")) return (SecretKey) store.getKey("data", null);
-        KeyGenerator gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
-        gen.init(new KeyGenParameterSpec.Builder("data", KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .build());
-        return gen.generateKey();
+    private JSObject state() {
+        android.content.SharedPreferences prefs = getContext().getSharedPreferences("relay", android.content.Context.MODE_PRIVATE);
+        Relay r = Relay.running;
+        JSObject s = new JSObject();
+        s.put("running", r != null);
+        s.put("url", "http://127.0.0.1:" + Relay.PORT + "/v1");
+        s.put("key", Relay.key(prefs));
+        s.put("parallel", prefs.getInt("parallel", 2));
+        s.put("gap", prefs.getInt("gap", 3));
+        if (r != null) s.put("gpt", r.codex.email());
+        return s;
+    }
+
+    @PluginMethod
+    public void relay(PluginCall call) {
+        Intent service = new Intent(getContext(), RelayService.class);
+        if (call.getBoolean("on", false)) {
+            androidx.core.content.ContextCompat.startForegroundService(getContext(), service);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> call.resolve(state()), 600);
+        } else {
+            getContext().stopService(service);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> call.resolve(state()), 300);
+        }
+    }
+
+    @PluginMethod
+    public void relayState(PluginCall call) {
+        call.resolve(state());
+    }
+
+    @PluginMethod
+    public void relaySet(PluginCall call) {
+        getContext().getSharedPreferences("relay", android.content.Context.MODE_PRIVATE).edit()
+            .putInt("parallel", call.getInt("parallel", 2))
+            .putInt("gap", call.getInt("gap", 3))
+            .apply();
+        if (Relay.running == null) {
+            call.resolve(state());
+            return;
+        }
+        Intent service = new Intent(getContext(), RelayService.class);
+        getContext().stopService(service);
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            androidx.core.content.ContextCompat.startForegroundService(getContext(), service);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> call.resolve(state()), 600);
+        }, 300);
+    }
+
+    @PluginMethod
+    public void relayLogin(PluginCall call) {
+        Relay r = Relay.running;
+        if (r == null) {
+            call.reject("先开启订阅转接");
+            return;
+        }
+        try {
+            String url = r.codex.begin(error -> {
+                if (error == null) call.resolve(state());
+                else call.reject(error);
+            });
+            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            call.reject("登录没成功：" + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void relayLogout(PluginCall call) {
+        try {
+            if (Relay.running != null) Relay.running.codex.logout();
+            call.resolve(state());
+        } catch (Exception e) {
+            call.reject(e.getMessage());
+        }
     }
 
     @PluginMethod
     public void seal(PluginCall call) {
         try {
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, dataKey());
-            byte[] iv = cipher.getIV(), body = cipher.doFinal(call.getString("text").getBytes(StandardCharsets.UTF_8));
-            byte[] all = new byte[iv.length + body.length];
-            System.arraycopy(iv, 0, all, 0, iv.length);
-            System.arraycopy(body, 0, all, iv.length, body.length);
             JSObject result = new JSObject();
-            result.put("text", Base64.encodeToString(all, Base64.NO_WRAP));
+            result.put("text", Vault.seal(call.getString("text")));
             call.resolve(result);
         } catch (Exception e) {
             call.reject(e.getMessage());
@@ -97,11 +147,8 @@ public class AppToolsPlugin extends Plugin {
     @PluginMethod
     public void unseal(PluginCall call) {
         try {
-            byte[] all = Base64.decode(call.getString("text"), Base64.NO_WRAP);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, dataKey(), new GCMParameterSpec(128, all, 0, 12));
             JSObject result = new JSObject();
-            result.put("text", new String(cipher.doFinal(all, 12, all.length - 12), StandardCharsets.UTF_8));
+            result.put("text", Vault.unseal(call.getString("text")));
             call.resolve(result);
         } catch (Exception e) {
             call.reject(e.getMessage());

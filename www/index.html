@@ -145,6 +145,8 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .dialog .row button { flex: 1; padding: 11px; border-radius: 10px; background: var(--line); }
 .dialog .row .del { background: var(--bad); color: #fff; }
 .dialog .row .primary { background: var(--accent); color: #fff; }
+.dialog .row .primary:disabled { opacity: .4; }
+.dialog .check { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; color: var(--text); font-size: 14px; }
 </style>
 </head>
 <body>
@@ -157,6 +159,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 <div class="seg theme" id="theme"><button data-t="auto">跟随系统</button><button data-t="light">浅色</button><button data-t="dark">深色</button></div>
 <div class="seg theme"><button id="exportBtn" data-label="导出站点">导出站点</button><button id="importBtn" data-label="导入站点">导入站点</button></div>
 <input type="file" id="importFile" hidden>
+<div class="seg theme"><button id="relayBtn">订阅转接</button></div>
 <div class="ver" id="ver"></div>
 
 <div class="mask" id="mask"></div>
@@ -204,6 +207,19 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
   <div class="body" id="logBody" hidden></div>
 </div>
 
+<div class="sheet" id="relaySheet">
+  <div class="head"><b>订阅转接</b><button class="small-btn" id="relayPower">开启</button><button class="small-btn" data-close>收起</button></div>
+  <div class="body" id="relayBody" hidden>
+    <div class="keyrow"><div class="main"><div class="kt">调用地址</div><div class="ks" id="relayUrl"></div></div><button class="small-btn" id="relayUrlCopy">复制</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">密钥</div><div class="ks" id="relayKey"></div></div><button class="small-btn" id="relayKeyCopy">复制</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">GPT</div><div class="ks" id="relayGpt"></div></div><button class="small-btn" id="relayGptBtn">登录</button></div>
+    <label>同时</label>
+    <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
+    <label>间隔</label>
+    <div class="seg" id="relayGap"><button data-v="0">不等</button><button data-v="3">3 秒</button><button data-v="5">5 秒</button><button data-v="10">10 秒</button></div>
+  </div>
+</div>
+
 <div class="sheet" id="keySheet">
   <div class="head"><b id="keyTitle"></b><button class="small-btn" id="keyRefresh">刷新</button><button class="small-btn" data-close>收起</button></div>
   <div class="body" id="keyBody"></div>
@@ -220,6 +236,11 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 </div>
 
 <div class="dialog" id="pwDialog"><div class="box"><p id="pwTitle"></p><div class="pw"><input class="field" id="pwInput" type="password" autocomplete="off"><button class="eye" id="pwEye">👁</button></div><div class="row"><button id="pwNo">取消</button><button class="primary" id="pwYes">确定</button></div></div></div>
+<div class="dialog" id="riskDialog"><div class="box">
+  <p>订阅转接会拿你登录的账号额度给酒馆用。GPT 用的是 OpenAI 给第三方应用的登录方式；谷歌的几个渠道都不是官方允许的用法，账号可能被限制或封禁。建议用不重要的号，别高强度用，别分享给别人。</p>
+  <label class="check"><input type="checkbox" id="riskOk">我知道可能被封号，后果自己承担</label>
+  <div class="row"><button id="riskNo">取消</button><button class="primary" id="riskYes" disabled>开启</button></div>
+</div></div>
 <div class="dialog" id="dialog"><div class="box"><p id="dialogText"></p><div class="row"><button id="dlgNo">取消</button><button class="del" id="dlgYes">删除</button></div></div></div>
 
 <script>
@@ -523,7 +544,12 @@ async function keyBalance(s) {
   const b = (j.balance_infos || [])[0];
   return b ? '余额 ' + (b.currency === 'USD' ? '$' : '¥') + fmt(b.total_balance) : '';
 }
+const RELAY_URL = 'http://127.0.0.1:8317';
 async function refreshSite(s) {
+  if (s.url === RELAY_URL) {
+    const st = await Capacitor.nativePromise('AppTools', 'relayState');
+    return setCard(s, st.running ? '运行中' : '没开', st.running ? 'ok' : '', '');
+  }
   if (s.type === 'other' && s.key) keyBalance(s).then(t => setCard(s, s.view ? '' : '需手动签', '', t), e => setCard(s, '出错', 'bad', e.message));
   if (s.view) {
     if (!canLogin(s)) return;
@@ -1311,6 +1337,69 @@ $('importFile').onchange = async () => {
   }
   added.forEach(refreshSite);
   flash(btn, '导入了 ' + added.length + ' 个站点');
+};
+let relay = null;
+const relayCall = (method, opt) => Capacitor.nativePromise('AppTools', method, opt);
+function showRelay(st) {
+  relay = st;
+  $('relayPower').textContent = st.running ? '关闭' : '开启';
+  $('relayBody').hidden = !st.running;
+  $('relayUrl').textContent = st.url;
+  $('relayKey').textContent = maskKey(st.key);
+  $('relayGpt').textContent = st.gpt || '没登录';
+  $('relayGptBtn').textContent = st.gpt ? '退出' : '登录';
+  for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
+  for (const b of $('relayGap').children) b.classList.toggle('on', +b.dataset.v === st.gap);
+  const site = sites.find(x => x.url === RELAY_URL);
+  if (site) setCard(site, st.running ? '运行中' : '没开', st.running ? 'ok' : '', '');
+}
+function addRelaySite() {
+  if (sites.some(x => x.url === RELAY_URL)) return;
+  const s = { id: 's' + Date.now(), name: '本机转接', type: 'other', url: RELAY_URL, key: relay.key, view: true };
+  sites.push(s);
+  save();
+  if (sites.length === 1) renderList();
+  else groupOf(s).appendChild(makeCard(s));
+  updateGroups();
+  refreshSite(s);
+}
+async function relayOn() {
+  showRelay(await relayCall('relay', { on: true }));
+  if (relay.running) addRelaySite();
+}
+$('relayBtn').onclick = async () => {
+  openSheet('relaySheet');
+  showRelay(await relayCall('relayState'));
+};
+$('relayPower').onclick = async () => {
+  if (relay.running) return showRelay(await relayCall('relay', { on: false }));
+  if (localStorage.getItem('relayRisk')) return relayOn();
+  $('riskOk').checked = false;
+  $('riskYes').disabled = true;
+  $('riskDialog').classList.add('open');
+};
+$('riskOk').onchange = () => { $('riskYes').disabled = !$('riskOk').checked; };
+$('riskNo').onclick = () => $('riskDialog').classList.remove('open');
+$('riskYes').onclick = () => {
+  localStorage.setItem('relayRisk', '1');
+  $('riskDialog').classList.remove('open');
+  relayOn();
+};
+$('relayUrlCopy').onclick = e => copyText(relay.url, e.target);
+$('relayKeyCopy').onclick = e => copyText(relay.key, e.target);
+$('relayGptBtn').onclick = async () => {
+  if (relay.gpt) return showRelay(await relayCall('relayLogout', { provider: 'gpt' }));
+  $('relayGptBtn').textContent = '登录中…';
+  try {
+    showRelay(await relayCall('relayLogin', { provider: 'gpt' }));
+  } catch (e) {
+    $('relayGpt').textContent = e.message;
+    $('relayGptBtn').textContent = '登录';
+  }
+};
+for (const id of ['relayParallel', 'relayGap']) for (const b of $(id).children) b.onclick = async () => {
+  for (const x of $(id).children) x.classList.toggle('on', x === b);
+  showRelay(await relayCall('relaySet', { parallel: +$('relayParallel').querySelector('.on').dataset.v, gap: +$('relayGap').querySelector('.on').dataset.v }));
 };
 $('copyCode').onclick = () => copyText($('devCode').textContent, $('copyCode'));
 $('actBtn').onclick = async () => {
