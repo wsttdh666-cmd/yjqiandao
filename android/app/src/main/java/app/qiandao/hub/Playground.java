@@ -5,10 +5,11 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -53,6 +54,12 @@ final class Playground implements Relay.Channel {
         return relay.prefs.contains("pgCookies") ? relay.prefs.getString("pgEmail", "已登录") : null;
     }
 
+    // 界面上显示的状态：没准备好就说原因，不写「已登录」
+    String status() {
+        if (!relay.prefs.contains("pgCookies")) return null;
+        return broken != null ? "没连上：" + broken : ready ? email() : "正在连…";
+    }
+
     public boolean ready() {
         return relay.prefs.contains("pgCookies");
     }
@@ -90,31 +97,34 @@ final class Playground implements Relay.Channel {
     }
 
     void login(String text, Consumer<String> done) {
-        JSONArray names;
-        try {
-            names = WebChannel.cookies(text);
-        } catch (IllegalStateException e) {
-            done.accept(e.getMessage());
-            return;
-        } catch (Exception e) {
-            done.accept("Cookie 格式认不出来，用 Cookie-Editor 导出的 JSON 或请求头里的 Cookie 那一行");
-            return;
-        }
-        relay.prefs.edit().putString("pgCookies", names.toString()).apply();
         main.post(() -> {
+            JSONArray names;
+            try {
+                names = WebChannel.cookies(text, WebChannel.jar("pg"));
+            } catch (IllegalStateException e) {
+                done.accept(e.getMessage());
+                return;
+            } catch (Exception e) {
+                done.accept("Cookie 格式认不出来，用 Cookie-Editor 导出的 JSON 或请求头里的 Cookie 那一行");
+                return;
+            }
+            relay.prefs.edit().putString("pgCookies", names.toString()).apply();
             waiting = done;
             open();
         });
     }
 
     void logout() {
-        try {
-            WebChannel.clear(new JSONArray(relay.prefs.getString("pgCookies", "[]")));
-        } catch (Exception ignored) {
-        }
+        String names = relay.prefs.getString("pgCookies", "[]");
         relay.prefs.edit().remove("pgCookies").remove("pgEmail").remove("pgModels").apply();
         rows.clear();
-        main.post(this::close);
+        main.post(() -> {
+            try {
+                WebChannel.clear(new JSONArray(names), WebChannel.jar("pg"));
+            } catch (Exception ignored) {
+            }
+            close();
+        });
     }
 
     void close() {
@@ -135,11 +145,11 @@ final class Playground implements Relay.Channel {
             return;
         }
         web = new WebView(ctx);
+        WebChannel.use(web, "pg");
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setOffscreenPreRaster(true);
         web.getSettings().setUserAgentString(web.getSettings().getUserAgentString().replace("; wv", "").replaceFirst("Version/\\S+ ", ""));
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.layout(0, 0, 1080, 2000);
         web.resumeTimers();
         web.addJavascriptInterface(new Object() {
@@ -152,6 +162,17 @@ final class Playground implements Relay.Channel {
             }
         }, "PgBridge");
         web.setWebViewClient(new WebViewClient() {
+            // 网没连上（比如刚开时被系统冻住）：别在错误页上跑脚本，30 秒后重开
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
+                if (view != web || !req.isForMainFrame()) return;
+                started = true;
+                fail("连不上谷歌，30 秒后自动再试");
+                main.postDelayed(() -> {
+                    if (web == view) open();
+                }, 30000);
+            }
+
             @Override
             public void onPageFinished(WebView view, String url) {
                 if (view != web || started || !"aistudio.google.com".equals(Uri.parse(url).getHost())) return;

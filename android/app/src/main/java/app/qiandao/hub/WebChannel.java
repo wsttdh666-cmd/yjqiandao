@@ -1,6 +1,10 @@
 package app.qiandao.hub;
 
 import android.webkit.CookieManager;
+import android.webkit.WebView;
+import androidx.webkit.ProfileStore;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -9,9 +13,22 @@ final class WebChannel {
     private WebChannel() {
     }
 
-    static JSONArray cookies(String text) throws Exception {
+    // 两边各用一个 Cookie 盒子：都是谷歌的 Cookie，放一起后登录的会把先登录的顶掉。老 WebView 不支持就只能共用
+    private static boolean split() {
+        return WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE);
+    }
+
+    static CookieManager jar(String name) {
+        return split() ? ProfileStore.getInstance().getOrCreateProfile(name).getCookieManager() : CookieManager.getInstance();
+    }
+
+    static void use(WebView web, String name) {
+        if (split()) WebViewCompat.setProfile(web, name);
+        jar(name).setAcceptThirdPartyCookies(web, true);
+    }
+
+    static JSONArray cookies(String text, CookieManager cm) throws Exception {
         JSONArray names = new JSONArray();
-        CookieManager cm = CookieManager.getInstance();
         text = text.trim().replaceFirst("(?i)^cookie:\\s*", "");
         if (text.startsWith("[")) {
             JSONArray list = new JSONArray(text);
@@ -33,8 +50,7 @@ final class WebChannel {
         return names;
     }
 
-    static void clear(JSONArray names) {
-        CookieManager cm = CookieManager.getInstance();
+    static void clear(JSONArray names, CookieManager cm) {
         for (int i = 0; names != null && i < names.length(); i++) {
             try {
                 cm.setCookie(names.getJSONArray(i).getString(0), names.getJSONArray(i).getString(1) + "; Max-Age=0");

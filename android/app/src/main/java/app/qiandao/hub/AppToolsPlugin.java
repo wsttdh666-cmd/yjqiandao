@@ -70,9 +70,9 @@ public class AppToolsPlugin extends Plugin {
         s.put("cap", prefs.getInt("cap", 50));
         if (r != null) {
             s.put("gpt", r.codex.email());
-            s.put("pg", r.pg.email());
+            s.put("pg", r.pg.status());
             s.put("agy", r.agy.email());
-            s.put("web", r.web.email());
+            s.put("web", r.web.status());
         }
         return s;
     }
