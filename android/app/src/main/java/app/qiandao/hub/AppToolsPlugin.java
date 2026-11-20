@@ -82,6 +82,15 @@ public class AppToolsPlugin extends Plugin {
         Intent service = new Intent(getContext(), RelayService.class);
         if (call.getBoolean("on", false)) {
             androidx.core.content.ContextCompat.startForegroundService(getContext(), service);
+            // 不在电池优化白名单里，切到别的 App 时系统会把转接冻住，请求一直没人接
+            android.os.PowerManager pm = (android.os.PowerManager) getContext().getSystemService(android.content.Context.POWER_SERVICE);
+            if (!pm.isIgnoringBatteryOptimizations(getContext().getPackageName())) {
+                try {
+                    getActivity().startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getContext().getPackageName())));
+                } catch (Exception e) {
+                    // 有的系统没有这个弹窗，就不管了，用户自己去电池设置里改
+                }
+            }
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> call.resolve(state()), 600);
         } else {
             getContext().stopService(service);
