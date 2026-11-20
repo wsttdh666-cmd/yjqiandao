@@ -16,7 +16,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.getcapacitor.JSObject;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import com.getcapacitor.PluginCall;
+import java.util.Collections;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -49,6 +52,9 @@ public class LoginActivity extends Activity {
         String ua = settings.getUserAgentString().replace("; wv", "").replaceFirst("Version/\\S+ ", "");
         Matcher chrome = Pattern.compile("Chrome/(\\S+)").matcher(ua);
         settings.setUserAgentString(chrome.find() ? ua + " EdgA/" + chrome.group(1) : ua);
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());
+        }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.setWebViewClient(new WebViewClient() {
             @Override
