@@ -375,6 +375,11 @@ const A = {
     async balance(s) {
       return '余额 ' + fmt((await A.wallet.wallet(s)).balance);
     },
+    async models(s) {
+      const { status, j } = await call(s, '/api/models/status');
+      if (status !== 200) throw new Error(j.message || '拿不到模型');
+      return j;
+    },
     async sign(s) {
       const w = await A.wallet.wallet(s);
       let got = 0;
@@ -464,7 +469,7 @@ function makeCard(s) {
   }
   el.querySelector('.topup').hidden = !topupUrl[s.id];
   el.querySelector('.topup').onclick = e => { e.stopPropagation(); openBrowser(topupUrl[s.id]); };
-  el.querySelector('.models').hidden = !(s.type === 'newapi' || (s.type === 'panel' && s.price));
+  el.querySelector('.models').hidden = !(s.type === 'newapi' || (s.type === 'panel' && s.price) || (s.type === 'wallet' && canLogin(s)));
   el.querySelector('.models').onclick = e => { e.stopPropagation(); openModels(s); };
   el.querySelector('.edit').onclick = e => { e.stopPropagation(); openEdit(s); };
   el.querySelector('.chip').onclick = e => {
@@ -500,6 +505,8 @@ async function webLoginSite(s) {
   const k = JSON.parse(key || 'null');
   if (k && !s.key) s.key = k;
   save();
+  $('c_' + s.id).replaceWith(makeCard(s));
+  updateGroups();
   refreshSite(s);
 }
 
@@ -596,9 +603,13 @@ function infoSections(s) {
   const manual = s.key ? [{ title: '密钥', sub: maskKey(s.key), text: s.key }] : [];
   const secs = [
     { name: '网址', now: [s.url, ...(s.alts || [])].map((u, i) => ({ title: i ? '备用网址' : '网址', sub: u, open: u })) },
-    { name: '调用地址', now: addrs, later: a && (async () => {
+    { name: '调用地址', now: addrs, later: a ? async () => {
       const real = (((await req(a.url + '/api/status')).j.data || {}).server_address || '').replace(/\/+$/, '');
       return real && real !== a.url ? [addr(real), ...addrs.slice(1)] : addrs;
+    } : s.type === 'wallet' && canLogin(s) && (async () => {
+      const { baseUrl } = await A.wallet.models(s);
+      const path = baseUrl ? new URL(baseUrl).pathname.replace(/\/+$/, '') : '';
+      return [s.url, ...(s.alts || [])].map((u, i) => addr(u + path, i ? '备用调用地址' : '调用地址'));
     }) },
     { name: '密钥', now: manual, empty: '还没有密钥', later:
       s.type === 'imgsite' ? canLogin(s) && (async () => {
@@ -741,6 +752,15 @@ let modelSite = null, billing = 'all', favOnly = false, vendor = '';
 const favs = new Set(JSON.parse(localStorage.getItem('favs') || '[]'));
 const modelCache = {};
 async function loadModels(s) {
+  if (s.type === 'wallet') {
+    const [j, mon] = await Promise.all([A.wallet.models(s), s.monitor ? loadMonitor(trimUrl(s.monitor)) : {}]);
+    const unit = j.billingUnit ? ' ' + j.billingUnit : '', n = x => Number(x).toLocaleString('en-US');
+    return (j.models || []).map(m => {
+      const b = m.billing || {}, per = b.type === 'request';
+      return { vendor: '', name: m.name, per, mon: mon[m.name],
+        price: per ? n(b.cost) + unit + ' / 次' : '输入 ' + n(b.inputPerMillion) + ' · 输出 ' + n(b.outputPerMillion) + unit + ' / 百万' };
+    }).sort((a, b) => !!b.mon - !!a.mon);
+  }
   const base = trimUrl(s.price || (s.type === 'newapi' ? s.url : ''));
   if (!base) return [];
   const [pricing, cur, mon] = await Promise.all([
