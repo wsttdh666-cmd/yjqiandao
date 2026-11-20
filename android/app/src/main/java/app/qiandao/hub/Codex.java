@@ -10,6 +10,7 @@ import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -32,6 +33,7 @@ final class Codex implements Relay.Channel {
 
     private final Relay relay;
     private JSONObject account;
+    private volatile ServerSocket waiting;
 
     Codex(Relay relay) {
         this.relay = relay;
@@ -72,16 +74,24 @@ final class Codex implements Relay.Channel {
             relay.prefs.edit().putString("device", device).apply();
         }
         String deviceId = device;
+        if (waiting != null) waiting.close();
         ServerSocket callback = new ServerSocket(1455, 4, InetAddress.getByName("127.0.0.1"));
-        callback.setSoTimeout(300000);
+        callback.setSoTimeout(1800000);
+        waiting = callback;
         new Thread(() -> {
             String result;
+            boolean got = false;
             try (ServerSocket server = callback) {
                 while (true) {
                     try (Socket s = server.accept()) {
                         String[] first = Relay.line(new BufferedInputStream(s.getInputStream())).split(" ");
                         if (first.length < 2 || !first[1].startsWith("/auth/callback")) continue;
                         Uri u = Uri.parse("http://localhost" + first[1]);
+                        got = true;
+                        String page = "<meta name=viewport content='width=device-width'><h3 style='font-family:sans-serif;text-align:center;margin-top:30vh'>回到「一键签到」看结果</h3>";
+                        OutputStream out = s.getOutputStream();
+                        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n" + page).getBytes(StandardCharsets.UTF_8));
+                        out.flush();
                         String code = u.getQueryParameter("code");
                         if (!state.equals(u.getQueryParameter("state")) || code == null) {
                             result = "登录没成功：" + u.getQueryParameter("error");
@@ -89,16 +99,12 @@ final class Codex implements Relay.Channel {
                             exchange(code, u.getQueryParameter("client_id"), verifier, deviceId);
                             result = null;
                         }
-                        String page = "<meta name=viewport content='width=device-width'><h3 style='font-family:sans-serif;text-align:center;margin-top:30vh'>"
-                            + (result == null ? "登录成功，回到「一键签到」就好" : result) + "</h3>";
-                        OutputStream out = s.getOutputStream();
-                        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n" + page).getBytes(StandardCharsets.UTF_8));
-                        out.flush();
                         break;
                     }
                 }
             } catch (Exception e) {
-                result = "登录没成功：" + e.getMessage();
+                if (waiting != callback) return;
+                result = !got && e instanceof SocketTimeoutException ? "等太久没登完，重新点登录" : "登录没成功：" + e.getMessage();
             }
             done.accept(result);
         }).start();
@@ -111,6 +117,8 @@ final class Codex implements Relay.Channel {
     private JSONObject token(String form) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(TOKEN).openConnection();
         c.setRequestMethod("POST");
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(20000);
         c.setDoOutput(true);
         c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
         c.setRequestProperty("Accept", "application/json");
