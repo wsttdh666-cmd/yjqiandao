@@ -129,13 +129,6 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .keyrow .ks { font-size: 13px; color: var(--sub); margin-top: 3px; word-break: break-all; }
 .empty { color: var(--sub); text-align: center; padding: 30px 0; }
 
-#gate { position: fixed; inset: 0; z-index: 30; background: var(--bg); padding: calc(var(--top) + 40px) 24px 24px; display: none; }
-#gate.open { display: block; }
-#gate h2 { margin: 0 0 12px; }
-.code-row { display: flex; align-items: center; justify-content: space-between; background: var(--card); border-radius: 12px; padding: 12px 14px; }
-.code-row b { font-size: 20px; letter-spacing: 1px; user-select: all; }
-#gate .err { color: var(--bad); font-size: 13px; min-height: 20px; margin-top: 6px; }
-#actBtn { width: 100%; padding: 14px; border-radius: 14px; background: var(--accent); color: #fff; font-weight: 600; font-size: 16px; }
 .hint { color: var(--sub); text-align: center; padding: 40px 0; }
 .dialog { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 20; background: rgba(15,18,30,.35); }
 .dialog.open { display: flex; }
@@ -242,15 +235,6 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
   <div class="body" id="keyBody"></div>
 </div>
 
-<div id="gate" class="open">
-  <h2>激活</h2>
-  <label>本机码</label>
-  <div class="code-row"><b id="devCode">读取中…</b><button class="small-btn" id="copyCode">复制</button></div>
-  <label>激活码</label>
-  <input class="field" id="actInput" autocapitalize="off" autocomplete="off">
-  <div class="err" id="actErr"></div>
-  <button id="actBtn">激活</button>
-</div>
 
 <div class="dialog" id="pwDialog"><div class="box"><p id="pwTitle"></p><div class="pw"><input class="field" id="pwInput" type="password" autocomplete="off"><button class="eye" id="pwEye">👁</button></div><div class="row"><button id="pwNo">取消</button><button class="primary" id="pwYes">确定</button></div></div></div>
 <div class="dialog" id="cookieDialog"><div class="box">
@@ -1249,22 +1233,8 @@ function closeSheets() { $('mask').classList.remove('open'); document.querySelec
 $('mask').onclick = closeSheets;
 document.querySelectorAll('[data-close]').forEach(b => (b.onclick = closeSheets));
 
-// ---------- 激活 ----------
-const PUB = {"kty":"EC","x":"JWhxLFfIDu__QCTF6IXhuoE_6MMI2-L5dA0XAXA6K30","y":"Qog7EN2kxPW9BGjJemVKyUheDqFTJiLCekPl1-aC-b0","crv":"P-256"};
-async function deviceCode() {
-  const { identifier } = await Capacitor.nativePromise('Device', 'getId');
-  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('qiandao:' + identifier)));
-  return [...h.slice(0, 6)].map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase().match(/.{4}/g).join('-');
-}
-async function verify(code, act) {
-  try {
-    const key = await crypto.subtle.importKey('jwk', PUB, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-    const sig = Uint8Array.from(atob(act.trim().replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-    return await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, new TextEncoder().encode(code));
-  } catch { return false; }
-}
-function unlock() {
-  $('gate').classList.remove('open');
+// ---------- 启动 ----------
+function start() {
   renderList();
   // 开过一次转接就一直开着：App 被系统关掉、手机重启后打开 App 自动接上
   if (localStorage.getItem('relayOn')) relayCall('relayState').then(st => st.running || relayOn());
@@ -1546,20 +1516,13 @@ for (const id of ['relayParallel', 'relayGap', 'relayCap']) for (const b of $(id
   for (const x of $(id).children) x.classList.toggle('on', x === b);
   showRelay(await relayCall('relaySet', { parallel: +$('relayParallel').querySelector('.on').dataset.v, gap: +$('relayGap').querySelector('.on').dataset.v, cap: +$('relayCap').querySelector('.on').dataset.v }));
 };
-$('copyCode').onclick = () => copyText($('devCode').textContent, $('copyCode'));
-$('actBtn').onclick = async () => {
-  const v = $('actInput').value.trim();
-  if (await verify($('devCode').textContent, v)) { localStorage.setItem('act', v); unlock(); }
-  else $('actErr').textContent = '激活码不对';
-};
-deviceCode().then(async code => {
+(async () => {
   sites = await unsealed('sites', []);
   for (const [k, v] of Object.entries(await unsealed('info', {}))) if (k.includes('|')) infoCache[k] = v;
   save();
   saveInfo();
-  $('devCode').textContent = code;
-  if (await verify(code, localStorage.getItem('act') || '')) unlock();
-});
+  start();
+})();
 </script>
 </body>
 </html>
