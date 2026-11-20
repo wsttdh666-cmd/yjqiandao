@@ -107,9 +107,11 @@ final class GeminiWeb implements Relay.Channel {
         web = new WebView(ctx);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
+        web.getSettings().setOffscreenPreRaster(true);
         web.getSettings().setUserAgentString(web.getSettings().getUserAgentString().replace("; wv", "").replaceFirst("Version/\\S+ ", ""));
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.layout(0, 0, 1080, 2000);
+        web.resumeTimers();
         web.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void post(String json) {

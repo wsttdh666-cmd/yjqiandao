@@ -1,5 +1,11 @@
 (() => {
   if (window.__web) return;
+  // 后台网页在安卓里不显示，网页会以为自己被切到后台而冻结；骗它一直是「可见」的
+  try {
+    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+    document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
+  } catch (e) {}
   const post = (...a) => WebBridge.post(JSON.stringify(a));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const wait = async (fn, ms) => {
@@ -52,14 +58,18 @@
         }
         const box = await wait(editor, 15000);
         if (!box) throw new Error('找不到输入框');
+        post('log', '找到输入框');
         setText(box, prompt);
+        post('log', '已打字');
         const btn = await wait(() => {
           const b = sendBtn();
           return b && !b.disabled ? b : null;
         }, 10000);
-        if (!btn) throw new Error('找不到发送按钮');
+        if (!btn) throw new Error('找不到发送按钮（字可能没打进去）');
+        post('log', '找到发送键');
         await sleep(100);
         btn.click();
+        post('log', '已点发送，等回复…');
 
         let sent = '', stable = 0, started = false;
         for (let i = 0; i < 1600; i++) {
