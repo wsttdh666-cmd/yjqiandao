@@ -152,6 +152,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .ckhelp li { margin: 3px 0; }
 .ckhelp .ckbtns { display: flex; gap: 8px; margin-top: 10px; }
 .ckhelp .ckbtns button { flex: 1; }
+.ckhelp .ckhint { margin: 8px 0 0; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -251,11 +252,12 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 <div class="dialog" id="cookieDialog"><div class="box">
   <p id="ckTitle"></p>
   <div class="ckhelp"><ol>
-    <li>用火狐(Firefox)浏览器打开网站，登录谷歌（手机 Chrome 装不了插件，也可电脑用 Chrome/Edge）</li>
-    <li>装插件 Cookie-Editor（下面按钮直达，手机版选 Firefox）</li>
-    <li>在网站页面点插件 → Export → 选 JSON，会自动复制</li>
+    <li>手机装火狐 Firefox 浏览器（Chrome 装不了插件）</li>
+    <li>火狐里装 Cookie-Editor（点下面「装插件」，页面里选 Firefox）</li>
+    <li>用火狐打开上面标题里的网站，登录谷歌，<b>人停在这个页面</b></li>
+    <li>就在这个页面点插件 Cookie-Editor → 底部 Export → 选 JSON，自动复制</li>
     <li>回来长按下面的框粘贴</li>
-  </ol><div class="ckbtns"><button class="small-btn" id="ckOpen">打开网站</button><button class="small-btn" id="ckPlugin">装 Cookie-Editor</button></div></div>
+  </ol><div class="ckbtns"><button class="small-btn" id="ckOpen" data-label="打开网站">打开网站</button><button class="small-btn" id="ckPlugin" data-label="装插件">装插件</button></div><p class="ckhint">点按钮会复制网址，可粘到火狐打开</p></div>
   <div class="pw"><input class="field" id="ckInput" type="password" autocomplete="off"><button class="eye" id="ckEye">👁</button></div>
   <div class="row"><button id="ckNo">取消</button><button class="primary" id="ckYes">确定</button></div>
 </div></div>
@@ -1319,7 +1321,7 @@ function askCookie(site) {
   $('ckTitle').textContent = '粘贴 ' + site + ' 的 Cookie';
   $('ckInput').value = '';
   $('ckInput').type = 'password';
-  $('ckOpen').onclick = () => openBrowser('https://' + site);
+  $('ckOpen').onclick = () => ckCopyOpen('https://' + site, $('ckOpen'));
   $('cookieDialog').classList.add('open');
   return new Promise(done => {
     const close = v => { $('cookieDialog').classList.remove('open'); done(v); };
@@ -1328,7 +1330,13 @@ function askCookie(site) {
   });
 }
 $('ckEye').onclick = () => { $('ckInput').type = $('ckInput').type === 'password' ? 'text' : 'password'; };
-$('ckPlugin').onclick = () => openBrowser('https://cookie-editor.com');
+$('ckPlugin').onclick = () => ckCopyOpen('https://cookie-editor.com', $('ckPlugin'));
+function ckCopyOpen(url, btn) {
+  if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+  btn.textContent = '已复制 ✓';
+  setTimeout(() => { btn.textContent = btn.dataset.label; }, 1500);
+  openBrowser(url);
+}
 const flash = (btn, text) => { btn.textContent = text; setTimeout(() => { btn.textContent = btn.dataset.label; }, 1800); };
 const b64 = a => btoa(Array.from(a, c => String.fromCharCode(c)).join(''));
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
