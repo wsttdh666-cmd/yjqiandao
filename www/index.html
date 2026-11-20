@@ -514,6 +514,10 @@ function makeCard(s) {
       e.stopPropagation();
       return webLoginSite(s);
     }
+    if (t === '去签到') {
+      e.stopPropagation();
+      return openBrowser(s.url);
+    }
     if (s.view || (t !== '未签' && t !== '出错')) return;
     e.stopPropagation();
     await signOne(s);
@@ -532,7 +536,9 @@ function setCard(s, chip, cls = '', info) {
   if (info !== undefined) el.querySelector('.info').textContent = info;
 }
 const canLogin = s => A[s.type] && (s.web || (s.user && s.pass));
-const failed = (s, e) => e.message === '登录过期' ? setCard(s, '去登录', 'wait', '登录过期') : setCard(s, '出错', 'bad', e.message);
+const failed = (s, e) => e.message === '登录过期' ? setCard(s, '去登录', 'wait', '登录过期')
+  : /人机|turnstile|请去网页签|cloudflare/i.test(e.message) ? setCard(s, '去签到', 'wait', '有人机验证，去网页手动签到')
+  : setCard(s, '出错', 'bad', e.message);
 function applyWeb(s, store) {
   let user = null;
   try { user = JSON.parse(store.user || 'null'); } catch {}
