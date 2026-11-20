@@ -15,6 +15,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -302,23 +303,38 @@ final class Relay {
         Sink.json(out, 200, new JSONObject().put("object", "list").put("data", data));
     }
 
+    final ArrayDeque<JSONObject> log = new ArrayDeque<>();
+
+    private void note(String model, boolean ok, String detail) throws Exception {
+        synchronized (log) {
+            log.addFirst(new JSONObject().put("t", System.currentTimeMillis() / 1000).put("model", model).put("ok", ok).put("detail", detail));
+            if (log.size() > 100) log.removeLast();
+        }
+    }
+
     private void chat(JSONObject req, OutputStream out) throws Exception {
         String model = req.optString("model");
         Channel channel = null;
         for (Channel c : channels) if (c.ready() && c.owns(model)) channel = c;
         if (channel == null) {
-            Sink.error(out, 404, "没有这个模型，或者对应的账号还没登录：" + model);
+            String m = "没有这个模型，或者对应的账号还没登录：" + model;
+            note(model, false, m);
+            Sink.error(out, 404, m);
             return;
         }
         int cap = prefs.getInt("cap", 50);
         if (cap > 0 && spent(channel.who(), false) >= cap) {
-            Sink.error(out, 429, "这个号今天已经用了 " + cap + " 次，到每日上限了，明天再用（上限可以在订阅转接里调）");
+            String m = "这个号今天已经用了 " + cap + " 次，到每日上限了，明天再用（上限可以在订阅转接里调）";
+            note(model, false, m);
+            Sink.error(out, 429, m);
             return;
         }
         Lane lane = lanes.get(channel);
         long wait = lane.coolUntil - System.currentTimeMillis();
         if (wait > 0) {
-            Sink.error(out, 429, "额度用完了，" + (wait / 60000 + 1) + " 分钟后再试");
+            String m = "额度用完了，" + (wait / 60000 + 1) + " 分钟后再试";
+            note(model, false, m);
+            Sink.error(out, 429, m);
             return;
         }
         lane.slots.acquire();
@@ -330,10 +346,13 @@ final class Relay {
             }
             spent(channel.who(), true);
             Sink sink = new Sink(out, req.optBoolean("stream"), model);
+            long begin = System.currentTimeMillis();
             try {
                 channel.chat(req, sink);
                 sink.finish();
+                note(model, true, "回复 " + sink.chars + " 字 · " + (System.currentTimeMillis() - begin) / 1000 + " 秒");
             } catch (Upstream e) {
+                note(model, false, e.getMessage());
                 if (e.code == 429) lane.coolUntil = System.currentTimeMillis() + Math.max(e.retryMs, 60000);
                 // 这个号没权限用 / 没有这个模型：记下来，下次拉取就不列了（转接面板里能重新检查）
                 if (e.code == 403 || e.code == 404) synchronized (prefs) {
@@ -343,6 +362,7 @@ final class Relay {
                 }
                 sink.fail(e.code, e.getMessage());
             } catch (Exception e) {
+                note(model, false, "连不上：" + e.getMessage());
                 sink.fail(502, "连不上：" + e.getMessage());
             }
         } finally {
@@ -356,6 +376,7 @@ final class Relay {
         final String model, id = "chatcmpl-" + System.nanoTime();
         final StringBuilder text = new StringBuilder(), think = new StringBuilder();
         String finish = "stop";
+        int chars;
         private boolean started;
 
         Sink(OutputStream out, boolean stream, String model) {
@@ -393,6 +414,7 @@ final class Relay {
         }
 
         void delta(String content, String reasoning) throws Exception {
+            if (content != null) chars += content.length();
             if (!stream) {
                 if (content != null) text.append(content);
                 if (reasoning != null) think.append(reasoning);

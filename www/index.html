@@ -211,6 +211,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <div class="vendors" id="vendors"></div>
   </div>
   <div class="body" id="modelBody"></div>
+  <div class="filters" id="logFilter" hidden><button data-f="all" class="on">全部</button><button data-f="ok">成功</button><button data-f="bad">失败</button></div>
   <div class="body" id="logBody" hidden></div>
 </div>
 
@@ -568,8 +569,10 @@ async function signed(s, got) {
 async function keyBalance(s) {
   const { status, j } = await req(s.url + '/user/balance', { headers: { Authorization: 'Bearer ' + s.key } });
   if (status === 401) throw new Error('密钥不对或已失效');
-  const b = (j.balance_infos || [])[0];
-  return b ? '余额 ' + (b.currency === 'USD' ? '$' : '¥') + fmt(b.total_balance) : '';
+  if (status === 404) return '';
+  if (!j.balance_infos) throw new Error('查余额失败（' + status + '）');
+  const b = j.balance_infos[0];
+  return '余额 ' + (b ? (b.currency === 'USD' ? '$' : '¥') + fmt(b.total_balance) : '¥0');
 }
 const RELAY_URL = 'http://127.0.0.1:8317';
 async function refreshSite(s) {
@@ -910,7 +913,7 @@ function openModels(s) {
   modelSite = s;
   $('modelTitle').textContent = s.name;
   $('search').value = '';
-  $('modelTabs').hidden = !apiSite(s);
+  $('modelTabs').hidden = !apiSite(s) && !s.key;
   setModelTab('models');
   if (modelCache[s.id]) renderModels(modelCache[s.id]); else showModels(s);
   openSheet('modelSheet');
@@ -920,22 +923,40 @@ function setModelTab(t) {
   modelTab = t;
   for (const b of $('modelTabs').children) b.classList.toggle('on', b.dataset.t === t);
   $('modelTools').hidden = $('modelBody').hidden = t !== 'models';
-  $('logBody').hidden = t !== 'logs';
+  $('logBody').hidden = $('logFilter').hidden = t !== 'logs';
   if (t === 'logs') showLogs(modelSite);
 }
 for (const b of $('modelTabs').children) b.onclick = () => setModelTab(b.dataset.t);
 
 const logCache = {};
+let logFilter = 'all';
+for (const b of $('logFilter').children) b.onclick = () => {
+  logFilter = b.dataset.f;
+  for (const x of $('logFilter').children) x.classList.toggle('on', x === b);
+  if (logCache[modelSite.id]) renderLogs(logCache[modelSite.id]);
+};
 const pad = n => String(n).padStart(2, '0');
 const when = ts => { const d = new Date(ts * 1000); return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
 async function loadLogs(s) {
+  if (s.url === RELAY_URL) {
+    const { list } = await relayCall('relayLogs');
+    return list.map(l => ({ bad: !l.ok, title: l.model || '调用', time: when(l.t), detail: l.detail }));
+  }
   const a = apiSite(s);
+  if (!a) {
+    const r = await req(s.url + '/api/log/token', { headers: { Authorization: 'Bearer ' + s.key } });
+    if (!r.j.success) throw new Error('这个站不提供日志');
+    return newApiLogs(r.j.data || [], await currency(s.url));
+  }
   const page = type => call(a, '/api/log/self/?p=1&page_size=30&type=' + type).then(r => {
     if (!r.j.success) throw new Error(r.j.message || '拿不到日志');
     return r.j.data.items || r.j.data || [];
   });
   const [used, failed, cur] = await Promise.all([page(2), page(5), currency(a.url)]);
-  return [...used, ...failed].sort((x, y) => y.created_at - x.created_at).slice(0, 30).map(l => l.type === 5
+  return newApiLogs([...used, ...failed], cur);
+}
+function newApiLogs(items, cur) {
+  return items.filter(l => l.type === 2 || l.type === 5).sort((x, y) => y.created_at - x.created_at).slice(0, 30).map(l => l.type === 5
     ? { bad: true, title: l.model_name || '出错', time: when(l.created_at), detail: l.content || '' }
     : { title: l.model_name || '调用', time: when(l.created_at),
         detail: '输入 ' + (l.prompt_tokens || 0) + ' · 输出 ' + (l.completion_tokens || 0) + ' · ' + (l.use_time || 0) + ' 秒 · ' + money(cur, l.quota || 0) + (l.token_name ? ' · ' + l.token_name : '') });
@@ -944,8 +965,9 @@ function renderLogs(list) {
   const body = document.createElement('div');
   body.className = 'body';
   body.id = 'logBody';
-  if (!list.length) body.innerHTML = '<div class="empty">最近没有调用记录</div>';
-  for (const l of list) {
+  const shown = list.filter(l => logFilter === 'all' || (logFilter === 'bad') === !!l.bad);
+  if (!shown.length) body.innerHTML = '<div class="empty">' + (list.length ? '没有符合的记录' : '最近没有调用记录') + '</div>';
+  for (const l of shown) {
     const el = document.createElement('div');
     el.className = 'log' + (l.bad ? ' bad' : '');
     el.innerHTML = '<div class="lt"><span></span><span></span></div><div class="ld"></div>';

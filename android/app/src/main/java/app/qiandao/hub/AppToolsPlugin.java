@@ -105,6 +105,16 @@ public class AppToolsPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void relayLogs(PluginCall call) {
+        com.getcapacitor.JSArray list = new com.getcapacitor.JSArray();
+        Relay r = Relay.running;
+        if (r != null) synchronized (r.log) {
+            for (org.json.JSONObject l : r.log) list.put(l);
+        }
+        call.resolve(new JSObject().put("list", list));
+    }
+
+    @PluginMethod
     public void relayRecheck(PluginCall call) {
         getContext().getSharedPreferences("relay", android.content.Context.MODE_PRIVATE).edit().remove("bad").apply();
         call.resolve(state());
