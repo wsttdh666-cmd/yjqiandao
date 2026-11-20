@@ -17,6 +17,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class LoginActivity extends Activity {
     static PluginCall pending;
@@ -44,6 +46,9 @@ public class LoginActivity extends Activity {
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        String ua = settings.getUserAgentString().replace("; wv", "").replaceFirst("Version/\\S+ ", "");
+        Matcher chrome = Pattern.compile("Chrome/(\\S+)").matcher(ua);
+        settings.setUserAgentString(chrome.find() ? ua + " EdgA/" + chrome.group(1) : ua);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.setWebViewClient(new WebViewClient() {
             @Override

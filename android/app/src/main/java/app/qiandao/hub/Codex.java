@@ -8,6 +8,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +22,7 @@ final class Codex implements Relay.Channel {
     private static final String API = "https://api.openai.com/v1";
     private static final String REDIRECT = "http://127.0.0.1:1455/auth/callback";
     private static final String AGENT = "QiandaoHub";
+    private static final String PREFIX = "【gpt】";
     private static final List<String> MODELS = Arrays.asList(
         "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra",
         "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
@@ -51,11 +53,13 @@ final class Codex implements Relay.Channel {
     }
 
     public List<String> models() {
-        return MODELS;
+        List<String> list = new ArrayList<>();
+        for (String m : MODELS) list.add(PREFIX + m);
+        return list;
     }
 
     public boolean owns(String model) {
-        return model.startsWith("gpt-");
+        return model.startsWith(PREFIX);
     }
 
     private static String b64(byte[] bytes) {
@@ -159,7 +163,7 @@ final class Codex implements Relay.Channel {
             }
             input.put(new JSONObject().put("role", mine ? "assistant" : "user").put("content", parts));
         }
-        JSONObject body = new JSONObject().put("model", req.getString("model")).put("stream", true).put("store", false).put("input", input);
+        JSONObject body = new JSONObject().put("model", req.getString("model").substring(PREFIX.length())).put("stream", true).put("store", false).put("input", input);
         if (instructions.length() > 0) body.put("instructions", instructions.toString().trim());
         String effort = req.optString("reasoning_effort");
         if (!effort.isEmpty()) body.put("reasoning", new JSONObject().put("effort", effort).put("summary", "auto"));
