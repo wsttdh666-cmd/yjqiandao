@@ -84,7 +84,15 @@ final class Codex implements Relay.Channel {
             try (ServerSocket server = callback) {
                 while (true) {
                     try (Socket s = server.accept()) {
-                        String[] first = Relay.line(new BufferedInputStream(s.getInputStream())).split(" ");
+                        s.setSoTimeout(3000);
+                        String[] first;
+                        try {
+                            BufferedInputStream in = new BufferedInputStream(s.getInputStream());
+                            first = Relay.line(in).split(" ");
+                            while (!Relay.line(in).isEmpty());
+                        } catch (SocketTimeoutException e) {
+                            continue;
+                        }
                         if (first.length < 2 || !first[1].startsWith("/auth/callback")) continue;
                         Uri u = Uri.parse("http://localhost" + first[1]);
                         got = true;
