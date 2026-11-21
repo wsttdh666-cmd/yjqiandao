@@ -448,7 +448,8 @@ async function call(s, path, opt = {}) {
 }
 
 // 要人机验证的站：在站点域名上渲染真验证框拿 token（sitekey 从 /api/status 取，缓存）
-async function turnstileToken(s) {
+let cfTokens = {};
+async function cfKeyOf(s) {
   if (s.cfKey === undefined) {
     try {
       const d = (await req(s.url + '/api/status')).j.data || {};
@@ -456,8 +457,24 @@ async function turnstileToken(s) {
       save();
     } catch { return ''; }
   }
-  if (!s.cfKey) return '';
-  const { token } = await Capacitor.nativePromise('AppTools', 'turnstile', { url: s.url, sitekey: s.cfKey });
+  return s.cfKey;
+}
+// 全部签到前：把所有要人机验证的站，一次性叠在一个能滚的弹窗里让用户一起过
+async function collectTurnstile(list) {
+  const need = [];
+  for (const s of list) {
+    if (s.type !== 'newapi') continue;
+    if (await cfKeyOf(s)) need.push({ url: s.url, sitekey: s.cfKey, name: s.name });
+  }
+  if (!need.length) return;
+  const tokens = await Capacitor.nativePromise('AppTools', 'turnstile', { sites: need });
+  if (tokens) for (const u in tokens) cfTokens[u] = tokens[u];
+}
+async function turnstileToken(s) {
+  if (cfTokens[s.url]) { const t = cfTokens[s.url]; delete cfTokens[s.url]; return t; }
+  if (!await cfKeyOf(s)) return '';
+  const tokens = await Capacitor.nativePromise('AppTools', 'turnstile', { url: s.url, sitekey: s.cfKey, name: s.name });
+  const token = tokens && tokens[s.url];
   if (!token) throw new Error('人机验证没过，再试一次');
   return token;
 }
@@ -751,7 +768,9 @@ $('signAll').onclick = async () => {
   btn.disabled = true;
   btn.textContent = '签到中…';
   pending = [];
-  await Promise.all(sites.filter(s => !s.view).map(signOne));
+  const list = sites.filter(s => !s.view);
+  await collectTurnstile(list);
+  await Promise.all(list.map(signOne));
   btn.disabled = false;
   btn.textContent = '全部签到';
   if (pending.length) openCaptcha();

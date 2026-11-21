@@ -240,6 +240,13 @@ public class AppToolsPlugin extends Plugin {
     @PluginMethod
     public void turnstile(PluginCall call) {
         TurnstileActivity.pending = call;
-        getActivity().startActivity(new Intent(getContext(), TurnstileActivity.class).putExtra("url", call.getString("url")).putExtra("sitekey", call.getString("sitekey")));
+        Intent intent = new Intent(getContext(), TurnstileActivity.class);
+        com.getcapacitor.JSArray sites = call.getArray("sites", null);
+        if (sites != null) {
+            intent.putExtra("sites", sites.toString());
+        } else {
+            intent.putExtra("url", call.getString("url")).putExtra("sitekey", call.getString("sitekey")).putExtra("name", call.getString("name"));
+        }
+        getActivity().startActivity(intent);
     }
 }
