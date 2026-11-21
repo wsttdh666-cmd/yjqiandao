@@ -307,7 +307,8 @@ const A = {
   newapi: {
     headers: s => ({ 'New-Api-User': String(s.uid || ''), ...(s.access ? { Authorization: 'Bearer ' + s.access } : {}) }),
     async login(s) {
-      const { j } = await req(s.url + '/api/user/login', { method: 'POST', body: { username: s.user, password: s.pass } });
+      const tk = await turnstileToken(s);
+      const { j } = await req(s.url + '/api/user/login' + (tk ? '?turnstile=' + encodeURIComponent(tk) : ''), { method: 'POST', body: { username: s.user, password: s.pass } });
       if (!j.success) throw new Error(j.message || '登录失败');
       if (j.data && j.data.require_2fa) throw new Error('这个账号开了两步验证，暂不支持');
       s.uid = j.data.id ?? (j.data.user && j.data.user.id);
@@ -333,7 +334,9 @@ const A = {
       return { id: j.data.captcha_id, img: j.data.image_base64, numeric: true };
     },
     async sign(s, c) {
-      const q = c ? '?captcha_id=' + encodeURIComponent(c.id) + '&captcha_answer=' + encodeURIComponent(c.answer) : '';
+      const tk = await turnstileToken(s);
+      let q = c ? '?captcha_id=' + encodeURIComponent(c.id) + '&captcha_answer=' + encodeURIComponent(c.answer) : '';
+      if (tk) q += (q ? '&' : '?') + 'turnstile=' + encodeURIComponent(tk);
       const { j } = await call(s, '/api/user/checkin' + q, { method: 'POST' });
       if (!j.success) throw new Error(j.message || '签到失败');
       return '+' + money(await currency(s.url), j.data.quota_awarded);
@@ -442,6 +445,21 @@ async function call(s, path, opt = {}) {
     r = await go();
   }
   return r;
+}
+
+// 要人机验证的站：在站点域名上渲染真验证框拿 token（sitekey 从 /api/status 取，缓存）
+async function turnstileToken(s) {
+  if (s.cfKey === undefined) {
+    try {
+      const d = (await req(s.url + '/api/status')).j.data || {};
+      s.cfKey = d.turnstile_check ? (d.turnstile_site_key || '') : '';
+      save();
+    } catch { return ''; }
+  }
+  if (!s.cfKey) return '';
+  const { token } = await Capacitor.nativePromise('AppTools', 'turnstile', { url: s.url, sitekey: s.cfKey });
+  if (!token) throw new Error('人机验证没过，再试一次');
+  return token;
 }
 
 // ---------- 站点列表 ----------

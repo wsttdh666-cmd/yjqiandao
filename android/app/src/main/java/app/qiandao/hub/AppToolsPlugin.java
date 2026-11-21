@@ -236,4 +236,10 @@ public class AppToolsPlugin extends Plugin {
         LoginActivity.pending = call;
         getActivity().startActivity(new Intent(getContext(), LoginActivity.class).putExtra("url", call.getString("url")).putExtra("scan", call.getString("scan")).putExtra("optional", call.getBoolean("optional", false)));
     }
+
+    @PluginMethod
+    public void turnstile(PluginCall call) {
+        TurnstileActivity.pending = call;
+        getActivity().startActivity(new Intent(getContext(), TurnstileActivity.class).putExtra("url", call.getString("url")).putExtra("sitekey", call.getString("sitekey")));
+    }
 }
