@@ -315,6 +315,15 @@ const A = {
       s.access = j.data.access_token || '';
       save();
     },
+    // 新版后台登录凭证只管 15 分钟，过期后拿 30 天的续期 cookie 换新的，不用再过人机验证
+    async refresh(s) {
+      const o = new URL(s.url).origin;
+      const { j } = await req(o + '/api/user/auth/refresh', { method: 'POST', headers: { Origin: o, Referer: o + '/' } });
+      if (!j.success || !j.data || !j.data.access_token) return false;
+      s.access = j.data.access_token;
+      save();
+      return true;
+    },
     async status(s) {
       const { j } = await call(s, '/api/user/checkin');
       if (!j.success) throw new Error(j.message || '查不到签到状态');
@@ -440,7 +449,10 @@ async function call(s, path, opt = {}) {
   let r = await go();
   if (r.status === 401) {
     if (s.web && !s.pass) throw new Error('登录过期');
-    if (!logins.has(s)) logins.set(s, ad.login(s).finally(() => logins.delete(s)));
+    if (!logins.has(s)) logins.set(s, (async () => {
+      if (ad.refresh && await ad.refresh(s).catch(() => false)) return;
+      await ad.login(s);
+    })().finally(() => logins.delete(s)));
     await logins.get(s);
     r = await go();
   }
