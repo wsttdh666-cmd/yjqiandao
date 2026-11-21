@@ -68,6 +68,11 @@ jobs:
             curl -sf -X DELETE "$R/releases/$id?access_token=$GT" > /dev/null
           done
           BR=$(curl -sf "$R?access_token=$GT" | jq -r .default_branch)
+          # 空仓库打不了标签，先放一个说明文件
+          if [ -z "$BR" ] || [ "$BR" = null ]; then
+            curl -sf -X POST "$R/contents/README.md" --form-string access_token=$GT --form-string content="$(printf '一键签到 安装包下载\n' | base64 -w0)" --form-string message=init > /dev/null || { echo "::error::Gitee 初始化仓库失败"; exit 1; }
+            BR=$(curl -sf "$R?access_token=$GT" | jq -r .default_branch)
+          fi
           ID=$(curl -s -X POST "$R/releases" --form-string access_token=$GT --form-string tag_name=v$VC --form-string name="版本 $VC" --form-string body="$(git log -1 --pretty=%s)" --form-string target_commitish=$BR | tee rel.json | jq -r .id)
           [ "$ID" != null ] || { echo "::error::Gitee 建发行版失败 $(cat rel.json)"; exit 1; }
           for f in qiandao.apk version.txt; do
