@@ -61,6 +61,8 @@ jobs:
         env:
           GT: ${{ secrets.GITEE_TOKEN }}
         run: |
+          GT=$(printf '%s' "$GT" | tr -d ' \r\n')
+          echo "钥匙长度 ${#GT}（Gitee 的是 32）"
           R=https://gitee.com/api/v5/repos/xxuovo/yjqiandao
           for id in $(curl -sf "$R/releases?access_token=$GT&per_page=100" | jq -r '.[].id'); do
             curl -sf -X DELETE "$R/releases/$id?access_token=$GT" > /dev/null
