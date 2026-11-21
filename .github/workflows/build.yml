@@ -55,3 +55,22 @@ jobs:
         run: |
           for t in $(gh release list --limit 200 --json tagName -q '.[].tagName'); do gh release delete "$t" -y --cleanup-tag; done
           gh release create v$VC qiandao.apk version.txt $(ls qiandao.ipa 2>/dev/null) -t "版本 $VC" -n "$(git log -1 --pretty=%s)" --latest 2> rel.log || { echo "::error::$(tr '\n' ' ' < rel.log)"; exit 1; }
+      # 国内下载快：同一个包再发一份到 Gitee，只留最新一版
+      - name: gitee
+        continue-on-error: true
+        env:
+          GT: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          R=https://gitee.com/api/v5/repos/xxuovo/yjqiandao
+          for id in $(curl -sf "$R/releases?access_token=$GT&per_page=100" | jq -r '.[].id'); do
+            curl -sf -X DELETE "$R/releases/$id?access_token=$GT" > /dev/null
+          done
+          BR=$(curl -sf "$R?access_token=$GT" | jq -r .default_branch)
+          ID=$(curl -s -X POST "$R/releases" --form-string access_token=$GT --form-string tag_name=v$VC --form-string name="版本 $VC" --form-string body="$(git log -1 --pretty=%s)" --form-string target_commitish=$BR | tee rel.json | jq -r .id)
+          [ "$ID" != null ] || { echo "::error::Gitee 建发行版失败 $(cat rel.json)"; exit 1; }
+          for f in qiandao.apk version.txt; do
+            curl -sf -X POST "$R/releases/$ID/attach_files" --form-string access_token=$GT -F file=@$f > /dev/null || { echo "::error::Gitee 传 $f 失败"; exit 1; }
+          done
+          curl -sfL -o check.apk https://gitee.com/xxuovo/yjqiandao/releases/download/v$VC/qiandao.apk
+          [ "$(wc -c < check.apk)" = "$(wc -c < qiandao.apk)" ] || { echo "::error::Gitee 上的包下载下来大小不对"; exit 1; }
+          echo "Gitee 发布并试下载成功"
