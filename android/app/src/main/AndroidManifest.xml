@@ -35,7 +35,7 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
         <activity android:name=".LoginActivity" android:exported="false" />
-        <activity android:name=".TurnstileActivity" android:exported="false" />
+        <activity android:name=".TurnstileActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <service android:name=".RelayService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="local api relay" />
         </service>

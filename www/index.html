@@ -549,11 +549,11 @@ function makeCard(s) {
       e.stopPropagation();
       return webLoginSite(s);
     }
-    if (t === '去签到') {
+    if (t === '去签到' && s.type !== 'newapi') {
       e.stopPropagation();
       return openBrowser(s.url);
     }
-    if (s.view || (t !== '未签' && t !== '出错')) return;
+    if (s.view || (t !== '未签' && t !== '出错' && t !== '去签到')) return;
     e.stopPropagation();
     await signOne(s);
     if (pending.some(p => p.s === s)) openCaptcha();
@@ -572,7 +572,7 @@ function setCard(s, chip, cls = '', info) {
 }
 const canLogin = s => A[s.type] && (s.web || (s.user && s.pass));
 const failed = (s, e) => e.message === '登录过期' ? setCard(s, '去登录', 'wait', '登录过期')
-  : /人机|turnstile|请去网页签|cloudflare/i.test(e.message) ? setCard(s, '去签到', 'wait', '有人机验证，去网页手动签到')
+  : /人机|turnstile|请去网页签|cloudflare/i.test(e.message) ? setCard(s, '去签到', 'wait', s.type === 'newapi' ? '要人机验证，点「去签到」' : '有人机验证，去网页手动签到')
   : setCard(s, '出错', 'bad', e.message);
 function applyWeb(s, store) {
   let user = null;

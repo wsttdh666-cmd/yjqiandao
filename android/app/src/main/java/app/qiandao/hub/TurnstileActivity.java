@@ -1,13 +1,18 @@
 package app.qiandao.hub;
 
 import android.app.Activity;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -19,7 +24,7 @@ import java.util.Collections;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-// 把所有要人机验证的站，叠在一个能上下滚的弹窗里，各自在自己的域名上渲染真·Cloudflare 验证框，拿到各自 token 一起返回
+// 底部弹窗：每个要人机验证的站一行，在站点自己域名上渲染真·Cloudflare 框（站点页面藏起来，只露框），全过自动收起
 public class TurnstileActivity extends Activity {
     static PluginCall pending;
     private final JSObject tokens = new JSObject();
@@ -29,25 +34,54 @@ public class TurnstileActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0x66000000);
         root.setFitsSystemWindows(true);
+        root.setOnClickListener(v -> finishAll());
 
-        TextView tip = new TextView(this);
-        tip.setText("人机验证：需要的话点一下方框，过了会自动收起");
-        tip.setPadding(28, 20, 28, 12);
-        root.addView(tip, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setClickable(true);
+        card.setPadding(dp(20), dp(18), dp(20), dp(16));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.WHITE);
+        bg.setCornerRadii(new float[] { dp(20), dp(20), dp(20), dp(20), 0, 0, 0, 0 });
+        card.setBackground(bg);
 
-        ScrollView scroll = new ScrollView(this);
+        TextView title = new TextView(this);
+        title.setText("人机验证");
+        title.setTextSize(17);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(0xFF222222);
+        card.addView(title);
+
+        final int maxH = getResources().getDisplayMetrics().heightPixels * 6 / 10;
+        ScrollView scroll = new ScrollView(this) {
+            @Override
+            protected void onMeasure(int w, int h) {
+                super.onMeasure(w, MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST));
+            }
+        };
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(list);
-        root.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        card.addView(scroll);
 
-        Button finish = new Button(this);
-        finish.setText("完成");
-        finish.setOnClickListener(v -> finishAll());
-        root.addView(finish, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        TextView cancel = new TextView(this);
+        cancel.setText("取消");
+        cancel.setTextSize(16);
+        cancel.setTextColor(0xFF444444);
+        cancel.setGravity(Gravity.CENTER);
+        GradientDrawable cbg = new GradientDrawable();
+        cbg.setColor(0xFFF0F1F4);
+        cbg.setCornerRadius(dp(14));
+        cancel.setBackground(cbg);
+        cancel.setOnClickListener(v -> finishAll());
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        clp.topMargin = dp(14);
+        card.addView(cancel, clp);
+
+        root.addView(card, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
         setContentView(root);
 
         JSONArray sites = parseSites();
@@ -77,13 +111,17 @@ public class TurnstileActivity extends Activity {
     }
 
     private void addSite(LinearLayout list, final String url, String sitekey, String name) {
-        TextView label = new TextView(this);
-        label.setText(name == null || name.isEmpty() ? url : name);
-        label.setTextSize(15);
-        label.setPadding(28, 16, 28, 6);
+        final String shown = name == null || name.isEmpty() ? url : name;
+        final TextView label = new TextView(this);
+        label.setText(shown);
+        label.setTextSize(14);
+        label.setTextColor(0xFF666666);
+        label.setPadding(0, dp(14), 0, dp(6));
         list.addView(label);
 
         final WebView web = new WebView(this);
+        web.setBackgroundColor(Color.WHITE);
+        web.setVisibility(View.INVISIBLE);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -93,10 +131,13 @@ public class TurnstileActivity extends Activity {
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
+        // 站点页面整页藏掉，只留我们放验证框的那个 div
         final String inject = "(function(){if(window.__cfInit)return;window.__cfInit=1;window.__cf='';"
+            + "var st=document.createElement('style');st.textContent='html,body{background:#fff!important;overflow:hidden!important}body>*:not(#__cfbox){display:none!important}#__cfbox{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#fff}';"
+            + "document.head.appendChild(st);"
+            + "var b=document.createElement('div');b.id='__cfbox';document.body.appendChild(b);"
             + "var s=document.createElement('script');s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';"
-            + "s.onload=function(){var b=document.createElement('div');b.style.cssText='position:fixed;top:12px;left:12px;z-index:2147483647;background:#fff;padding:12px;border-radius:8px';document.body.appendChild(b);"
-            + "try{turnstile.render(b,{sitekey:" + JSONObject.quote(sitekey) + ",callback:function(t){window.__cf=t;}});}catch(e){window.__cf='ERR'+e;}};"
+            + "s.onload=function(){try{turnstile.render(b,{sitekey:" + JSONObject.quote(sitekey) + ",theme:'light',callback:function(t){window.__cf=t;}});}catch(e){window.__cf='ERR'+e;}};"
             + "document.head.appendChild(s);})();";
 
         web.setWebViewClient(new WebViewClient() {
@@ -105,27 +146,32 @@ public class TurnstileActivity extends Activity {
             public void onPageFinished(WebView view, String current) {
                 if (started || !host(current).equals(host(url))) return;
                 started = true;
-                view.evaluateJavascript(inject, null);
-                pollOne(web, url);
+                view.evaluateJavascript(inject, v -> view.setVisibility(View.VISIBLE));
+                pollOne(web, label, shown, url);
             }
         });
         web.loadUrl(url);
-        list.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(300)));
+        list.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(80)));
     }
 
-    private void pollOne(final WebView web, final String url) {
+    private void pollOne(final WebView web, final TextView label, final String shown, final String url) {
         if (done || tokens.has(url)) return;
         web.evaluateJavascript("window.__cf||''", v -> {
             if (done || tokens.has(url)) return;
             String t = v == null ? "" : v.replaceAll("^\"|\"$", "");
-            if (t.startsWith("ERR")) return;
-            if (t.isEmpty()) {
-                web.postDelayed(() -> pollOne(web, url), 500);
-            } else {
-                tokens.put(url, t);
-                got++;
-                if (got >= total) finishAll();
+            if (t.startsWith("ERR")) {
+                label.setText(shown + "  · 验证框没加载出来");
+                return;
             }
+            if (t.isEmpty()) {
+                web.postDelayed(() -> pollOne(web, label, shown, url), 500);
+                return;
+            }
+            tokens.put(url, t);
+            label.setText(shown + "  ✓ 已通过");
+            label.setTextColor(0xFF2E9E5B);
+            got++;
+            if (got >= total) web.postDelayed(this::finishAll, 400);
         });
     }
 
@@ -147,6 +193,7 @@ public class TurnstileActivity extends Activity {
             pending = null;
         }
         finish();
+        overridePendingTransition(0, 0);
     }
 
     @Override
