@@ -16,11 +16,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import androidx.webkit.WebSettingsCompat;
-import androidx.webkit.WebViewFeature;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
-import java.util.Collections;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -122,13 +119,10 @@ public class TurnstileActivity extends Activity {
         final WebView web = new WebView(this);
         web.setBackgroundColor(Color.WHITE);
         web.setVisibility(View.INVISIBLE);
+        // Cloudflare 要求浏览器身份前后一致，这里不能伪装 UA
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setUserAgentString(settings.getUserAgentString().replace("; wv", "").replaceFirst("Version/\\S+ ", ""));
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
-            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, Collections.emptySet());
-        }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
         // 站点页面整页藏掉，只留我们放验证框的那个 div
@@ -137,7 +131,8 @@ public class TurnstileActivity extends Activity {
             + "document.head.appendChild(st);"
             + "var b=document.createElement('div');b.id='__cfbox';document.body.appendChild(b);"
             + "var s=document.createElement('script');s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';"
-            + "s.onload=function(){try{turnstile.render(b,{sitekey:" + JSONObject.quote(sitekey) + ",theme:'light',callback:function(t){window.__cf=t;}});}catch(e){window.__cf='ERR'+e;}};"
+            + "s.onload=function(){try{turnstile.render(b,{sitekey:" + JSONObject.quote(sitekey) + ",theme:'light',callback:function(t){window.__cf=t;},'error-callback':function(c){window.__cf='ERR'+c;return true;}});window.__cfReady=1;}catch(e){window.__cf='ERR'+e.name;}};"
+            + "s.onerror=function(){window.__cf='ERRnet';};"
             + "document.head.appendChild(s);})();";
 
         web.setWebViewClient(new WebViewClient() {
@@ -151,19 +146,27 @@ public class TurnstileActivity extends Activity {
             }
         });
         web.loadUrl(url);
+        label.setText(shown + "  · 加载中…");
+        web.postDelayed(() -> {
+            if (!done && !tokens.has(url) && label.getText().toString().endsWith("加载中…")) label.setText(shown + "  · 验证框没加载出来");
+        }, 20000);
         list.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(80)));
     }
 
     private void pollOne(final WebView web, final TextView label, final String shown, final String url) {
         if (done || tokens.has(url)) return;
-        web.evaluateJavascript("window.__cf||''", v -> {
+        // 第一位是「框已画出来」标记，后面是 token 或 ERR+错误代码
+        web.evaluateJavascript("(window.__cfReady?'1':'0')+(window.__cf||'')", v -> {
             if (done || tokens.has(url)) return;
-            String t = v == null ? "" : v.replaceAll("^\"|\"$", "");
+            String r = v == null ? "0" : v.replaceAll("^\"|\"$", "");
+            if (!r.startsWith("0") && !r.startsWith("1")) r = "0";
+            String t = r.substring(1);
+            if (r.startsWith("1") && label.getText().toString().endsWith("加载中…")) label.setText(shown);
             if (t.startsWith("ERR")) {
-                label.setText(shown + "  · 验证框没加载出来");
-                return;
+                label.setText(shown + ("ERRnet".equals(t) ? "  · 连不上 Cloudflare" : "  · 验证出错（" + t.substring(3) + "）"));
+                web.evaluateJavascript("window.__cf=''", null);
             }
-            if (t.isEmpty()) {
+            if (t.isEmpty() || t.startsWith("ERR")) {
                 web.postDelayed(() -> pollOne(web, label, shown, url), 500);
                 return;
             }
