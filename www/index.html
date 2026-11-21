@@ -25,6 +25,10 @@ h1 { font-size: 22px; margin: 0; }
 .icon-btn { background: var(--card); width: 38px; height: 38px; border-radius: 12px; font-size: 22px; color: var(--accent); }
 #update { margin: 8px 18px 0; padding: 10px 14px; border-radius: 12px; background: var(--accbg); color: var(--accent); display: flex; align-items: center; justify-content: space-between; font-weight: 600; }
 #update[hidden] { display: none; }
+#updRow { margin: 2px 18px 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); }
+#src { gap: 4px; }
+#src button { flex: none; padding: 6px 10px; border-radius: 9px; font-size: 13px; }
+#checkBtn { margin-left: auto; }
 #signAll { display: block; width: calc(100% - 36px); margin: 12px 18px 16px; padding: 16px; border-radius: 16px; background: var(--accent); color: #fff; font-size: 18px; font-weight: 600; transition: transform .1s, opacity .2s; }
 #signAll:active { transform: scale(.98); }
 #signAll:disabled { opacity: .6; }
@@ -151,7 +155,8 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 </style>
 </head>
 <body>
-<header><h1>一键签到</h1><button class="small-btn" id="checkBtn">检查更新</button><button class="icon-btn" id="addBtn">＋</button></header>
+<header><h1>一键签到</h1><button class="icon-btn" id="addBtn">＋</button></header>
+<div id="updRow"><span>更新</span><div class="seg" id="src"><button data-s="gitee">Gitee</button><button data-s="github">GitHub</button></div><button class="small-btn" id="checkBtn">检查更新</button></div>
 <div id="update" hidden><span>有新版本</span><button class="small-btn" id="updBtn">更新</button></div>
 <button id="signAll">全部签到</button>
 <input class="field" id="siteSearch" placeholder="搜站点">
@@ -1323,17 +1328,20 @@ window.onSystemDark = d => { sysDark = d; applyTheme(); };
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => onSystemDark(e.matches));
 for (const b of $('theme').children) b.onclick = () => { localStorage.setItem('theme', b.dataset.t); applyTheme(); };
 applyTheme();
-// 国内先走 Gitee（快），不通再走 GitHub
+// 更新源自己选：Gitee 国内快，GitHub 出新版最早
 const GITEE = 'https://gitee.com/xxuovo/yjqiandao/releases/download/';
-let latest = 0, fromGitee = false;
+const useGitee = () => (localStorage.getItem('src') || 'gitee') === 'gitee';
+let latest = 0;
+function showSrc() {
+  for (const b of $('src').children) b.classList.toggle('on', (b.dataset.s === 'gitee') === useGitee());
+}
+for (const b of $('src').children) b.onclick = () => { localStorage.setItem('src', b.dataset.s); showSrc(); checkUpdate(); };
+showSrc();
 async function checkUpdate() {
   try {
-    try {
-      const tag = (await (await fetch('https://gitee.com/api/v5/repos/xxuovo/yjqiandao/releases/latest')).json()).tag_name;
-      latest = Number(tag.slice(1));
-      fromGitee = latest > 0;
-    } catch { fromGitee = false; }
-    if (!fromGitee) latest = Number(await (await fetch(RELEASE + 'version.txt')).text());
+    latest = useGitee()
+      ? Number((await (await fetch('https://gitee.com/api/v5/repos/xxuovo/yjqiandao/releases/latest')).json()).tag_name.slice(1))
+      : Number(await (await fetch(RELEASE + 'version.txt')).text());
     if (!(latest > 0)) return '检查失败';
     $('update').hidden = !(latest > VER);
     return latest > VER ? '有新版本' : '已是最新';
@@ -1354,10 +1362,8 @@ $('updBtn').onclick = async () => {
   const progress = Capacitor.addListener('AppTools', 'progress', p => {
     btn.textContent = '下载中 ' + (p.total > 0 ? Math.floor(p.done * 100 / p.total) + '%' : (p.done / 1048576).toFixed(1) + 'M');
   });
-  const install = url => Capacitor.nativePromise('AppTools', 'install', { url, ver: String(latest) });
   try {
-    if (fromGitee) await install(GITEE + 'v' + latest + '/qiandao.apk').catch(() => install(RELEASE + 'qiandao.apk'));
-    else await install(RELEASE + 'qiandao.apk');
+    await Capacitor.nativePromise('AppTools', 'install', { url: useGitee() ? GITEE + 'v' + latest + '/qiandao.apk' : RELEASE + 'qiandao.apk', ver: String(latest) });
     btn.textContent = '更新';
   } catch { btn.textContent = '下载失败，重试'; }
   progress.remove();
