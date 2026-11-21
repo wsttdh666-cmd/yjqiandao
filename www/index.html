@@ -1311,9 +1311,10 @@ window.onSystemDark = d => { sysDark = d; applyTheme(); };
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => onSystemDark(e.matches));
 for (const b of $('theme').children) b.onclick = () => { localStorage.setItem('theme', b.dataset.t); applyTheme(); };
 applyTheme();
+let latest = 0;
 async function checkUpdate() {
   try {
-    const latest = Number(await (await fetch(RELEASE + 'version.txt')).text());
+    latest = Number(await (await fetch(RELEASE + 'version.txt')).text());
     if (!(latest > 0)) return '检查失败';
     $('update').hidden = !(latest > VER);
     return latest > VER ? '有新版本' : '已是最新';
@@ -1335,7 +1336,7 @@ $('updBtn').onclick = async () => {
     btn.textContent = '下载中 ' + (p.total > 0 ? Math.floor(p.done * 100 / p.total) + '%' : (p.done / 1048576).toFixed(1) + 'M');
   });
   try {
-    await Capacitor.nativePromise('AppTools', 'install', { url: RELEASE + 'qiandao.apk' });
+    await Capacitor.nativePromise('AppTools', 'install', { url: RELEASE + 'qiandao.apk', ver: String(latest) });
     btn.textContent = '更新';
   } catch { btn.textContent = '下载失败，重试'; }
   progress.remove();

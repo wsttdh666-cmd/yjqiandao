@@ -1,8 +1,16 @@
 package app.qiandao.hub;
 
+import android.app.DownloadManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.net.Uri;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.core.content.FileProvider;
+import androidx.lifecycle.Lifecycle;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -11,51 +19,64 @@ import java.util.function.Consumer;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name = "AppTools")
 public class AppToolsPlugin extends Plugin {
+    // 交给系统下载器：切到别的 App 也接着下，断网能续，通知栏有进度；同一版本已在下或已下完就直接接上
     @PluginMethod
     public void install(PluginCall call) {
-        String url = call.getString("url");
-        new Thread(() -> {
-            try {
-                File apk = new File(getContext().getCacheDir(), "update.apk");
-                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(20000);
-                try (InputStream in = conn.getInputStream(); OutputStream out = new FileOutputStream(apk)) {
-                    long total = conn.getContentLengthLong(), done = 0;
-                    int last = -1;
-                    byte[] buf = new byte[65536];
-                    int n;
-                    while ((n = in.read(buf)) > 0) {
-                        out.write(buf, 0, n);
-                        done += n;
-                        int step = (int) (total > 0 ? done * 100 / total : done >> 20);
-                        if (step != last) {
-                            last = step;
-                            JSObject p = new JSObject();
-                            p.put("done", done);
-                            p.put("total", total);
-                            notifyListeners("progress", p);
-                        }
-                    }
+        DownloadManager dm = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+        SharedPreferences prefs = getContext().getSharedPreferences("update", Context.MODE_PRIVATE);
+        File apk = new File(getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk");
+        String ver = call.getString("ver", "");
+        long id = prefs.getLong("id", -1);
+        long[] q = id >= 0 && ver.equals(prefs.getString("ver", "")) ? query(dm, id) : null;
+        if (q == null || q[0] == DownloadManager.STATUS_FAILED || (q[0] == DownloadManager.STATUS_SUCCESSFUL && !apk.exists())) {
+            if (id >= 0) dm.remove(id);
+            apk.delete();
+            id = dm.enqueue(new DownloadManager.Request(Uri.parse(call.getString("url")))
+                .setTitle("一键签到 新版本")
+                .setMimeType("application/vnd.android.package-archive")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalFilesDir(getContext(), Environment.DIRECTORY_DOWNLOADS, "update.apk"));
+            prefs.edit().putLong("id", id).putString("ver", ver).apply();
+        }
+        final long task = id;
+        Handler h = new Handler(Looper.getMainLooper());
+        h.post(new Runnable() {
+            @Override
+            public void run() {
+                long[] s = query(dm, task);
+                if (s == null || s[0] == DownloadManager.STATUS_FAILED) {
+                    call.reject("下载失败");
+                    return;
+                }
+                notifyListeners("progress", new JSObject().put("done", s[1]).put("total", s[2]));
+                // 下完了但人在别的 App 里，等回到我们这边再弹安装
+                if (s[0] != DownloadManager.STATUS_SUCCESSFUL || !getActivity().getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) {
+                    h.postDelayed(this, 500);
+                    return;
                 }
                 Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", apk);
-                Intent intent = new Intent(Intent.ACTION_VIEW)
+                getContext().startActivity(new Intent(Intent.ACTION_VIEW)
                     .setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-                getContext().startActivity(intent);
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK));
                 call.resolve();
-            } catch (Exception e) {
-                call.reject(e.getMessage());
             }
-        }).start();
+        });
+    }
+
+    private static long[] query(DownloadManager dm, long id) {
+        try (Cursor c = dm.query(new DownloadManager.Query().setFilterById(id))) {
+            if (c == null || !c.moveToFirst()) return null;
+            return new long[] {
+                c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
+                c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+                c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+            };
+        }
     }
 
     private JSObject state() {
