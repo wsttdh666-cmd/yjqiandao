@@ -54,6 +54,7 @@ final class Relay {
     }
 
     final SharedPreferences prefs;
+    private final Context ctx;
     final List<Channel> channels = new ArrayList<>();
     final Codex codex;
     final Playground pg;
@@ -74,6 +75,7 @@ final class Relay {
     }
 
     Relay(Context ctx) {
+        this.ctx = ctx;
         prefs = ctx.getSharedPreferences("relay", Context.MODE_PRIVATE);
         codex = new Codex(this);
         pg = new Playground(this, ctx);
@@ -333,19 +335,31 @@ final class Relay {
     synchronized int expand(String p) throws Exception {
         if (!p.equals("pg") && !p.equals("web")) return 0;
         String box = prefs.getString(p + "Profile", p);
-        java.util.concurrent.FutureTask<String> cookie = new java.util.concurrent.FutureTask<>(() -> WebChannel.jar(box).getCookie("https://accounts.google.com"));
-        new android.os.Handler(android.os.Looper.getMainLooper()).post(cookie);
-        HttpURLConnection c = (HttpURLConnection) new java.net.URL("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard").openConnection();
-        c.setRequestMethod("POST");
-        c.setDoOutput(true);
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(15000);
-        c.setRequestProperty("Cookie", cookie.get(30, java.util.concurrent.TimeUnit.SECONDS));
-        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-        c.setFixedLengthStreamingMode(0);
-        c.getOutputStream().close();
-        if (c.getResponseCode() != 200) throw new IOException("谷歌回了 " + c.getResponseCode());
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"\\s@]+@[^\"\\s]+)\"").matcher(read(c.getInputStream()));
+        // 在这个号自己的 Cookie 盒子里开个隐形网页去问：普通联网请求会被 Capacitor 自动塞进默认盒子的 Cookie
+        java.util.concurrent.CompletableFuture<String> got = new java.util.concurrent.CompletableFuture<>();
+        android.webkit.WebView[] page = new android.webkit.WebView[1];
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        main.post(() -> {
+            page[0] = new android.webkit.WebView(ctx);
+            WebChannel.use(page[0], box);
+            page[0].getSettings().setJavaScriptEnabled(true);
+            page[0].setWebViewClient(new android.webkit.WebViewClient() {
+                @Override
+                public void onPageFinished(android.webkit.WebView view, String url) {
+                    view.evaluateJavascript("document.body ? document.body.innerText : ''", got::complete);
+                }
+            });
+            page[0].postUrl("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard", new byte[0]);
+        });
+        String text;
+        try {
+            text = new JSONArray("[" + got.get(30, java.util.concurrent.TimeUnit.SECONDS) + "]").getString(0);
+        } finally {
+            main.post(() -> {
+                if (page[0] != null) page[0].destroy();
+            });
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"\\s@]+@[^\"\\s]+)\"").matcher(text);
         List<String> emails = new ArrayList<>();
         while (m.find()) if (!emails.contains(m.group(1))) emails.add(m.group(1));
         JSONArray list = saved(p);
