@@ -43,6 +43,8 @@
   async function headers() {
     const h = {};
     for (const [k, v] of Object.entries(template)) if (k !== 'authorization' && k !== 'content-length') h[k] = v;
+    // 一份 Cookie 里有几个号时，页面地址是 /u/1/… 这样的，请求要说明是第几个号
+    h['x-goog-authuser'] = (location.pathname.match(/^\/u\/(\d+)\//) || [0, '0'])[1];
     const c = Object.fromEntries(document.cookie.split('; ').map(x => [x.slice(0, x.indexOf('=')), x.slice(x.indexOf('=') + 1)]));
     const ts = Math.floor(Date.now() / 1000), sign = async v => ts + '_' + await hex('SHA-1', ts + ' ' + v + ' https://aistudio.google.com');
     const sid = c.SAPISID || c['__Secure-1PAPISID'];
