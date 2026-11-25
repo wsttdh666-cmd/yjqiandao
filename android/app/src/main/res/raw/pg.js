@@ -66,6 +66,8 @@
         if (!await wait(hookSnapshot, 30000)) throw new Error('页面没加载完');
         const box = await wait(() => document.querySelector('ms-prompt-box textarea, textarea'), 30000);
         if (!box) throw new Error('找不到输入框，先在浏览器里打开一次 AI Studio，把弹窗都点掉');
+        // 页面刚出来就发，谷歌的校验还没准备好，之后的请求都会被拒（403）；等几秒再热身
+        await new Promise(r => setTimeout(r, 6000));
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'hi');
         box.dispatchEvent(new InputEvent('input', { bubbles: true, data: 'hi', inputType: 'insertText' }));
         await new Promise(r => setTimeout(r, 300));
