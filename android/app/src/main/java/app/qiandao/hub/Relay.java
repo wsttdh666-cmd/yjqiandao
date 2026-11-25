@@ -341,7 +341,10 @@ final class Relay {
         c.setConnectTimeout(15000);
         c.setReadTimeout(15000);
         c.setRequestProperty("Cookie", cookie.get(30, java.util.concurrent.TimeUnit.SECONDS));
+        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+        c.setFixedLengthStreamingMode(0);
         c.getOutputStream().close();
+        if (c.getResponseCode() != 200) throw new IOException("谷歌回了 " + c.getResponseCode());
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"\\s@]+@[^\"\\s]+)\"").matcher(read(c.getInputStream()));
         List<String> emails = new ArrayList<>();
         while (m.find()) if (!emails.contains(m.group(1))) emails.add(m.group(1));
