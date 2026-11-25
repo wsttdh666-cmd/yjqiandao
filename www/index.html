@@ -1510,7 +1510,8 @@ async function relayLogin(p, adding) {
     if (adding) showRelay(await relayCall('relayAccount', { provider: p, action: 'add' }));
     const st = await relayCall('relayLogin', { provider: p, cookie });
     showRelay(st);
-    if (st.dup) $('relay' + n).textContent = '登的还是 ' + st.dup + '，没重复存';
+    if (st.more) $('relay' + n).textContent = '这份 Cookie 里还有 ' + st.more + ' 个号，已一起加上';
+    else if (st.dup) $('relay' + n).textContent = '登的还是 ' + st.dup + '，没重复存';
   } catch (e) {
     showRelay(await relayCall('relayState'));
     $('relay' + n).textContent = e.message;

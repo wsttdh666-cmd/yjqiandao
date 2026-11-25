@@ -182,10 +182,19 @@ public class AppToolsPlugin extends Plugin {
                 call.reject(error);
                 return;
             }
-            String dup = r.dedupe(prov);
-            JSObject s = state();
-            if (dup != null) s.put("dup", dup);
-            call.resolve(s);
+            // 问谷歌要账号列表要联网，不能放在主线程
+            new Thread(() -> {
+                String dup = r.dedupe(prov);
+                int more = 0;
+                try {
+                    more = r.expand(prov);
+                } catch (Exception ignored) {
+                }
+                JSObject s = state();
+                if (dup != null) s.put("dup", dup);
+                if (more > 0) s.put("more", more);
+                call.resolve(s);
+            }).start();
         };
         if ("pg".equals(prov) || "web".equals(prov)) {
             if ("web".equals(prov)) r.web.login(call.getString("cookie", ""), done);

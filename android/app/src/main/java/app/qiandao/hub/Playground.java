@@ -131,15 +131,13 @@ final class Playground implements Relay.Channel {
     void logout() {
         String names = relay.prefs.getString("pgCookies", "[]");
         String box = profile();
-        relay.prefs.edit().remove("pgCookies").remove("pgEmail").remove("pgModels").apply();
+        relay.prefs.edit().remove("pgCookies").remove("pgEmail").remove("pgModels").remove("pgUser").commit();
         rows.clear();
-        main.post(() -> {
-            try {
-                WebChannel.clear(new JSONArray(names), WebChannel.jar(box));
-            } catch (Exception ignored) {
-            }
-            close();
-        });
+        try {
+            relay.release("pg", box, new JSONArray(names));
+        } catch (Exception ignored) {
+        }
+        main.post(this::close);
     }
 
     void close() {
@@ -200,7 +198,7 @@ final class Playground implements Relay.Channel {
             if (web != mine || ready || broken != null) return;
             fail(started ? "AI Studio 页面太久没准备好" : "谷歌没认这份 Cookie，可能过期了，重新导出一份再登录");
         }, 90000);
-        web.loadUrl(PAGE);
+        web.loadUrl(PAGE + "&authuser=" + relay.prefs.getString("pgUser", "0"));
     }
 
     private void fail(String why) {

@@ -25,7 +25,7 @@ final class GeminiWeb implements Relay.Channel {
     private static final String PREFIX = "【网页】";
     // 名字 → Gemini 网页「模式选择器」里的选项关键词（自动不用切）
     private static final String[][] MODES = {{"自动", ""}, {"日常", "Hydrogen"}, {"深入", "Neon"}, {"代码", "Carbon"}};
-    private static final String PAGE = "https://gemini.google.com/app";
+    private static final String PAGE = "https://gemini.google.com/u/%s/app";
 
     private final Relay relay;
     private final Context ctx;
@@ -106,14 +106,12 @@ final class GeminiWeb implements Relay.Channel {
     void logout() {
         String names = relay.prefs.getString("webCookies", "[]");
         String box = profile();
-        relay.prefs.edit().remove("webCookies").remove("webEmail").apply();
-        main.post(() -> {
-            try {
-                WebChannel.clear(new JSONArray(names), WebChannel.jar(box));
-            } catch (Exception ignored) {
-            }
-            close();
-        });
+        relay.prefs.edit().remove("webCookies").remove("webEmail").remove("webUser").commit();
+        try {
+            relay.release("web", box, new JSONArray(names));
+        } catch (Exception ignored) {
+        }
+        main.post(this::close);
     }
 
     void close() {
@@ -174,7 +172,7 @@ final class GeminiWeb implements Relay.Channel {
             if (web != mine || ready || broken != null) return;
             fail(started ? "Gemini 网页太久没准备好" : "谷歌没认这份 Cookie，可能过期了，重新导出一份再登录");
         }, 90000);
-        web.loadUrl(PAGE);
+        web.loadUrl(String.format(PAGE, relay.prefs.getString("webUser", "0")));
     }
 
     private void fail(String why) {

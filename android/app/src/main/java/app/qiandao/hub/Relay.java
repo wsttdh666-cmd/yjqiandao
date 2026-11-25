@@ -213,8 +213,8 @@ final class Relay {
         switch (p) {
             case "gpt": return new String[]{"codex"};
             case "agy": return new String[]{"antigravity"};
-            case "pg": return new String[]{"pgCookies", "pgEmail", "pgModels", "pgProfile"};
-            default: return new String[]{"webCookies", "webEmail", "webProfile"};
+            case "pg": return new String[]{"pgCookies", "pgEmail", "pgModels", "pgProfile", "pgUser"};
+            default: return new String[]{"webCookies", "webEmail", "webProfile", "webUser"};
         }
     }
 
@@ -296,10 +296,9 @@ final class Relay {
             if (!email.equals(a.optString("email"))) continue;
             list.remove(i);
             prefs.edit().putString(p + "Saved", list.toString()).commit();
-            String box = a.optString(p + "Profile", p);
-            if (a.has(p + "Cookies") && !box.equals(prefs.getString(p + "Profile", p))) {
+            if (a.has(p + "Cookies")) {
                 try {
-                    WebChannel.forget(new JSONArray(a.optString(p + "Cookies")), box);
+                    release(p, a.optString(p + "Profile", p), new JSONArray(a.optString(p + "Cookies")));
                 } catch (Exception ignored) {
                 }
             }
@@ -313,7 +312,54 @@ final class Relay {
         JSONObject a = list.getJSONObject(i);
         list.remove(i);
         prefs.edit().putString(p + "Saved", list.toString()).commit();
-        if (a.has(p + "Cookies")) WebChannel.forget(new JSONArray(a.getString(p + "Cookies")), a.optString(p + "Profile", p));
+        if (a.has(p + "Cookies")) release(p, a.optString(p + "Profile", p), new JSONArray(a.getString(p + "Cookies")));
+    }
+
+    // 同一份 Cookie 里登着几个号时，这几个号共用一个 Cookie 盒子：数一数还有几个号在用这个盒子
+    private int users(String p, String box) {
+        int n = prefs.contains(p + "Cookies") && box.equals(prefs.getString(p + "Profile", p)) ? 1 : 0;
+        JSONArray list = saved(p);
+        for (int i = 0; i < list.length(); i++) if (box.equals(list.optJSONObject(i).optString(p + "Profile", p))) n++;
+        return n;
+    }
+
+    // 退出或删掉一个号：盒子没人用了就清空；还有同一份 Cookie 里的别的号在用就留着，当前位置换个新盒子，免得下次登录把它顶掉
+    synchronized void release(String p, String box, JSONArray names) {
+        if (users(p, box) == 0) WebChannel.forget(names, box);
+        else if (box.equals(prefs.getString(p + "Profile", p))) prefs.edit().putString(p + "Profile", p + "-" + random(4)).commit();
+    }
+
+    // 一份 Cookie 里登着好几个谷歌号：按谷歌给的顺序，第几个就是 authuser 几；当前号以外的都存进列表，返回新加了几个
+    synchronized int expand(String p) throws Exception {
+        if (!p.equals("pg") && !p.equals("web")) return 0;
+        String box = prefs.getString(p + "Profile", p);
+        java.util.concurrent.FutureTask<String> cookie = new java.util.concurrent.FutureTask<>(() -> WebChannel.jar(box).getCookie("https://accounts.google.com"));
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(cookie);
+        HttpURLConnection c = (HttpURLConnection) new java.net.URL("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser&json=standard").openConnection();
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(15000);
+        c.setRequestProperty("Cookie", cookie.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        c.getOutputStream().close();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"\\s@]+@[^\"\\s]+)\"").matcher(read(c.getInputStream()));
+        List<String> emails = new ArrayList<>();
+        while (m.find()) if (!emails.contains(m.group(1))) emails.add(m.group(1));
+        JSONArray list = saved(p);
+        Set<String> have = new HashSet<>();
+        have.add(email(p));
+        for (int i = 0; i < list.length(); i++) have.add(list.optJSONObject(i).optString("email"));
+        int added = 0;
+        for (int i = 0; i < emails.size(); i++) {
+            if (have.contains(emails.get(i))) continue;
+            JSONObject a = new JSONObject();
+            for (String k : keys(p)) if (prefs.contains(k)) a.put(k, prefs.getString(k, null));
+            a.put("email", emails.get(i)).put(p + "Email", emails.get(i)).put(p + "Profile", box).put(p + "User", String.valueOf(i));
+            list.put(a);
+            added++;
+        }
+        prefs.edit().putString(p + "Saved", list.toString()).commit();
+        return added;
     }
 
     void start() throws IOException {
