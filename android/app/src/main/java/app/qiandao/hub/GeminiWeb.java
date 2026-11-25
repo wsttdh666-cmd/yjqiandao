@@ -39,7 +39,19 @@ final class GeminiWeb implements Relay.Channel {
     GeminiWeb(Relay relay, Context ctx) {
         this.relay = relay;
         this.ctx = ctx;
-        if (relay.prefs.contains("webCookies")) main.post(this::open);
+        reload();
+    }
+
+    public void reload() {
+        main.post(() -> {
+            close();
+            if (relay.prefs.contains("webCookies")) open();
+        });
+    }
+
+    // 每个号一个 Cookie 盒子，最早登录的那个号用老名字
+    private String profile() {
+        return relay.prefs.getString("webProfile", "web");
     }
 
     String email() {
@@ -77,7 +89,7 @@ final class GeminiWeb implements Relay.Channel {
         main.post(() -> {
             JSONArray names;
             try {
-                names = WebChannel.cookies(text, WebChannel.jar("web"));
+                names = WebChannel.cookies(text, WebChannel.jar(profile()));
             } catch (IllegalStateException e) {
                 done.accept(e.getMessage());
                 return;
@@ -93,10 +105,11 @@ final class GeminiWeb implements Relay.Channel {
 
     void logout() {
         String names = relay.prefs.getString("webCookies", "[]");
+        String box = profile();
         relay.prefs.edit().remove("webCookies").remove("webEmail").apply();
         main.post(() -> {
             try {
-                WebChannel.clear(new JSONArray(names), WebChannel.jar("web"));
+                WebChannel.clear(new JSONArray(names), WebChannel.jar(box));
             } catch (Exception ignored) {
             }
             close();
@@ -121,7 +134,7 @@ final class GeminiWeb implements Relay.Channel {
             return;
         }
         web = new WebView(ctx);
-        WebChannel.use(web, "web");
+        WebChannel.use(web, profile());
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setOffscreenPreRaster(true);
@@ -175,6 +188,7 @@ final class GeminiWeb implements Relay.Channel {
     private void message(JSONArray m) throws Exception {
         String type = m.getString(0);
         if (type.equals("ready")) {
+            if (!m.optString(1).isEmpty()) relay.prefs.edit().putString("webEmail", m.getString(1)).apply();
             ready = true;
             main.post(() -> {
                 if (waiting != null) waiting.accept(null);

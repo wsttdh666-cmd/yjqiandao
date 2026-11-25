@@ -95,6 +95,14 @@ public class AppToolsPlugin extends Plugin {
             s.put("pg", r.show(r.pg, r.pg.status()));
             s.put("agy", r.show(r.agy, r.agy.email()));
             s.put("web", r.show(r.web, r.web.status()));
+            JSObject saved = new JSObject();
+            for (String p : new String[]{"gpt", "agy", "pg", "web"}) {
+                com.getcapacitor.JSArray emails = new com.getcapacitor.JSArray();
+                org.json.JSONArray list = r.saved(p);
+                for (int i = 0; i < list.length(); i++) emails.put(list.optJSONObject(i).optString("email"));
+                saved.put(p, emails);
+            }
+            s.put("saved", saved);
         }
         return s;
     }
@@ -187,6 +195,28 @@ public class AppToolsPlugin extends Plugin {
             getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (Exception e) {
             call.reject("登录没成功：" + e.getMessage());
+        }
+    }
+
+    // 多个号：add 把当前号存起来、腾出位置给新号登录；use 切到存着的第 index 个；drop 删掉它
+    @PluginMethod
+    public void relayAccount(PluginCall call) {
+        Relay r = Relay.running;
+        if (r == null) {
+            call.reject("先开启订阅转接");
+            return;
+        }
+        String p = call.getString("provider");
+        int i = call.getInt("index", 0);
+        try {
+            switch (call.getString("action", "")) {
+                case "add": r.add(p); break;
+                case "use": r.use(p, i); break;
+                default: r.drop(p, i);
+            }
+            call.resolve(state());
+        } catch (Exception e) {
+            call.reject(e.getMessage());
         }
     }
 

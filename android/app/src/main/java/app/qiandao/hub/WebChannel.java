@@ -1,5 +1,7 @@
 package app.qiandao.hub;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
 import androidx.webkit.ProfileStore;
@@ -14,7 +16,7 @@ final class WebChannel {
     }
 
     // 两边各用一个 Cookie 盒子：都是谷歌的 Cookie，放一起后登录的会把先登录的顶掉。老 WebView 不支持就只能共用
-    private static boolean split() {
+    static boolean split() {
         return WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE);
     }
 
@@ -58,6 +60,11 @@ final class WebChannel {
             }
         }
         cm.flush();
+    }
+
+    // 删掉一个存起来的号：清掉它那个盒子里的 Cookie（Cookie 盒子只能在主线程动）
+    static void forget(JSONArray names, String profile) {
+        new Handler(Looper.getMainLooper()).post(() -> clear(names, jar(profile)));
     }
 
     private static void put(CookieManager cm, JSONArray names, String url, String name, String value, String domain) throws Exception {

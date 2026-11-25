@@ -132,6 +132,7 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
 .keyrow .main { flex: 1; min-width: 0; }
 .keyrow .kt { font-size: 14px; font-weight: 600; }
 .keyrow .ks { font-size: 13px; color: var(--sub); margin-top: 3px; word-break: break-all; }
+.keyrow.sub { padding: 8px 0 8px 14px; }
 .empty { color: var(--sub); text-align: center; padding: 30px 0; }
 
 .hint { color: var(--sub); text-align: center; padding: 40px 0; }
@@ -221,11 +222,15 @@ label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 6px; 
     <div class="keyrow"><div class="main"><div class="kt">调用地址</div><div class="ks" id="relayUrl"></div></div><button class="small-btn" id="relayUrlCopy">复制</button></div>
     <div class="keyrow"><div class="main"><div class="kt">密钥</div><div class="ks" id="relayKey"></div></div><button class="small-btn" id="relayKeyCopy">复制</button></div>
     <label>官方转接</label>
-    <div class="keyrow"><div class="main"><div class="kt">GPT</div><div class="ks" id="relayGpt"></div></div><button class="small-btn" id="relayGptBtn">登录</button></div>
-    <div class="keyrow"><div class="main"><div class="kt">Gemini · 反重力</div><div class="ks" id="relayAgy"></div></div><button class="small-btn" id="relayAgyBtn">登录</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">GPT</div><div class="ks" id="relayGpt"></div></div><button class="small-btn" id="relayGptAdd" hidden>添加</button><button class="small-btn" id="relayGptBtn">登录</button></div>
+    <div id="relayGptList"></div>
+    <div class="keyrow"><div class="main"><div class="kt">Gemini · 反重力</div><div class="ks" id="relayAgy"></div></div><button class="small-btn" id="relayAgyAdd" hidden>添加</button><button class="small-btn" id="relayAgyBtn">登录</button></div>
+    <div id="relayAgyList"></div>
     <label>页面转接</label>
-    <div class="keyrow"><div class="main"><div class="kt">Gemini · AI Studio</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgBtn">登录</button></div>
-    <div class="keyrow"><div class="main"><div class="kt">Gemini · 网页版</div><div class="ks" id="relayWeb"></div></div><button class="small-btn" id="relayWebBtn">登录</button></div>
+    <div class="keyrow"><div class="main"><div class="kt">Gemini · AI Studio</div><div class="ks" id="relayPg"></div></div><button class="small-btn" id="relayPgAdd" hidden>添加</button><button class="small-btn" id="relayPgBtn">登录</button></div>
+    <div id="relayPgList"></div>
+    <div class="keyrow"><div class="main"><div class="kt">Gemini · 网页版</div><div class="ks" id="relayWeb"></div></div><button class="small-btn" id="relayWebAdd" hidden>添加</button><button class="small-btn" id="relayWebBtn">登录</button></div>
+    <div id="relayWebList"></div>
     <div class="keyrow" id="relayHiddenRow"><div class="main"><div class="kt">用不了的模型</div><div class="ks" id="relayHidden"></div></div><button class="small-btn" id="relayRecheck">重新检查</button></div>
     <label>并发</label>
     <div class="seg" id="relayParallel"><button data-v="1">1 个</button><button data-v="2">2 个</button><button data-v="3">3 个</button></div>
@@ -1467,20 +1472,65 @@ $('importFile').onchange = async () => {
 };
 let relay = null;
 const relayCall = (method, opt) => Capacitor.nativePromise('AppTools', method, opt);
+const RELAY_ROWS = { gpt: 'Gpt', agy: 'Agy', pg: 'Pg', web: 'Web' };
+const RELAY_LOGIN = {
+  gpt: {},
+  agy: { risk: ['agyRisk', 'AGY 走谷歌反重力（Antigravity）的登录来用 Gemini。用量过大可能被谷歌限制这个号的反重力权限，但一般不影响网页版 Gemini 和账号其他功能。'] },
+  pg: { risk: ['pgRisk', 'PG 用你自己谷歌号在 AI Studio 网页上的免费额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制这个号用 AI Studio，甚至封号。'], cookie: 'aistudio.google.com' },
+  web: { risk: ['webRisk', '网页版用你自己谷歌号在 gemini.google.com 上聊天的额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制甚至封这个号。'], cookie: 'gemini.google.com' },
+};
+// 存着的其它号：列表没变就不重画
+function showAccounts(p, saved) {
+  const box = $('relay' + RELAY_ROWS[p] + 'List'), sig = JSON.stringify(saved);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.innerHTML = '';
+  saved.forEach((email, index) => {
+    const row = document.createElement('div');
+    row.className = 'keyrow sub';
+    row.innerHTML = '<div class="main"><div class="ks"></div></div><button class="small-btn">切换</button><button class="small-btn">删除</button>';
+    row.querySelector('.ks').textContent = email;
+    const [use, drop] = row.querySelectorAll('button');
+    use.onclick = async () => {
+      use.textContent = '切换中…';
+      showRelay(await relayCall('relayAccount', { provider: p, action: 'use', index }));
+    };
+    drop.onclick = () => confirmBox('删掉 ' + email + '？', '删除', async () => showRelay(await relayCall('relayAccount', { provider: p, action: 'drop', index })));
+    box.appendChild(row);
+  });
+}
+async function relayLogin(p, adding) {
+  const n = RELAY_ROWS[p], c = RELAY_LOGIN[p];
+  if (!adding && relay[p]) return showRelay(await relayCall('relayLogout', { provider: p }));
+  if (c.risk && !await askRisk(c.risk[0], c.risk[1], '登录')) return;
+  const cookie = c.cookie && await askCookie(c.cookie);
+  if (c.cookie && !cookie) return;
+  $('relay' + n + 'Btn').textContent = '登录中…';
+  try {
+    if (adding) showRelay(await relayCall('relayAccount', { provider: p, action: 'add' }));
+    showRelay(await relayCall('relayLogin', { provider: p, cookie }));
+  } catch (e) {
+    showRelay(await relayCall('relayState'));
+    $('relay' + n).textContent = e.message;
+  }
+}
+for (const [p, n] of Object.entries(RELAY_ROWS)) {
+  $('relay' + n + 'Btn').onclick = () => relayLogin(p, false);
+  $('relay' + n + 'Add').onclick = () => relayLogin(p, true);
+}
 function showRelay(st) {
   relay = st;
   $('relayPower').textContent = st.running ? '关闭' : '开启';
   $('relayBody').hidden = !st.running;
   $('relayUrl').textContent = st.url;
   $('relayKey').textContent = maskKey(st.key);
-  $('relayGpt').textContent = st.gpt || '没登录';
-  $('relayGptBtn').textContent = st.gpt ? '退出' : '登录';
-  $('relayPg').textContent = st.pg || '没登录';
-  $('relayPgBtn').textContent = st.pg ? '退出' : '登录';
-  $('relayAgy').textContent = st.agy || '没登录';
-  $('relayAgyBtn').textContent = st.agy ? '退出' : '登录';
-  $('relayWeb').textContent = st.web || '没登录';
-  $('relayWebBtn').textContent = st.web ? '退出' : '登录';
+  for (const [p, n] of Object.entries(RELAY_ROWS)) {
+    const saved = (st.saved || {})[p] || [];
+    $('relay' + n).textContent = st[p] ? (saved.length ? '✓ ' : '') + st[p] : '没登录';
+    $('relay' + n + 'Btn').textContent = st[p] ? '退出' : '登录';
+    $('relay' + n + 'Add').hidden = !st[p];
+    showAccounts(p, saved);
+  }
   $('relayHiddenRow').hidden = !st.hidden;
   $('relayHidden').textContent = '已隐藏 ' + st.hidden + ' 个';
   for (const b of $('relayParallel').children) b.classList.toggle('on', +b.dataset.v === st.parallel);
@@ -1537,53 +1587,6 @@ $('relayPower').onclick = async () => {
 $('relayUrlCopy').onclick = e => copyText(relay.url, e.target);
 $('relayKeyCopy').onclick = e => copyText(relay.key, e.target);
 $('relayRecheck').onclick = async () => showRelay(await relayCall('relayRecheck'));
-$('relayGptBtn').onclick = async () => {
-  if (relay.gpt) return showRelay(await relayCall('relayLogout', { provider: 'gpt' }));
-  $('relayGptBtn').textContent = '登录中…';
-  try {
-    showRelay(await relayCall('relayLogin', { provider: 'gpt' }));
-  } catch (e) {
-    $('relayGpt').textContent = e.message;
-    $('relayGptBtn').textContent = '登录';
-  }
-};
-$('relayPgBtn').onclick = async () => {
-  if (relay.pg) return showRelay(await relayCall('relayLogout', { provider: 'pg' }));
-  if (!await askRisk('pgRisk', 'PG 用你自己谷歌号在 AI Studio 网页上的免费额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制这个号用 AI Studio，甚至封号。', '登录')) return;
-  const cookie = await askCookie('aistudio.google.com');
-  if (!cookie) return;
-  $('relayPgBtn').textContent = '登录中…';
-  try {
-    showRelay(await relayCall('relayLogin', { provider: 'pg', cookie }));
-  } catch (e) {
-    $('relayPg').textContent = e.message;
-    $('relayPgBtn').textContent = '登录';
-  }
-};
-$('relayWebBtn').onclick = async () => {
-  if (relay.web) return showRelay(await relayCall('relayLogout', { provider: 'web' }));
-  if (!await askRisk('webRisk', '网页版用你自己谷歌号在 gemini.google.com 上聊天的额度给酒馆用，这不是谷歌允许的用法。用得太多或分享给别人，谷歌可能限制甚至封这个号。', '登录')) return;
-  const cookie = await askCookie('gemini.google.com');
-  if (!cookie) return;
-  $('relayWebBtn').textContent = '登录中…';
-  try {
-    showRelay(await relayCall('relayLogin', { provider: 'web', cookie }));
-  } catch (e) {
-    $('relayWeb').textContent = e.message;
-    $('relayWebBtn').textContent = '登录';
-  }
-};
-$('relayAgyBtn').onclick = async () => {
-  if (relay.agy) return showRelay(await relayCall('relayLogout', { provider: 'agy' }));
-  if (!await askRisk('agyRisk', 'AGY 走谷歌反重力（Antigravity）的登录来用 Gemini。用量过大可能被谷歌限制这个号的反重力权限，但一般不影响网页版 Gemini 和账号其他功能。', '登录')) return;
-  $('relayAgyBtn').textContent = '登录中…';
-  try {
-    showRelay(await relayCall('relayLogin', { provider: 'agy' }));
-  } catch (e) {
-    $('relayAgy').textContent = e.message;
-    $('relayAgyBtn').textContent = '登录';
-  }
-};
 for (const id of ['relayParallel', 'relayGap', 'relayCap']) for (const b of $(id).children) b.onclick = async () => {
   for (const x of $(id).children) x.classList.toggle('on', x === b);
   showRelay(await relayCall('relaySet', { parallel: +$('relayParallel').querySelector('.on').dataset.v, gap: +$('relayGap').querySelector('.on').dataset.v, cap: +$('relayCap').querySelector('.on').dataset.v }));

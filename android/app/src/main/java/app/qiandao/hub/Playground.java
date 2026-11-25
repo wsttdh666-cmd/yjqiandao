@@ -43,11 +43,23 @@ final class Playground implements Relay.Channel {
     Playground(Relay relay, Context ctx) {
         this.relay = relay;
         this.ctx = ctx;
+        reload();
+    }
+
+    public void reload() {
         try {
             catalog(new JSONArray(relay.prefs.getString("pgModels", "[[]]")));
         } catch (Exception ignored) {
         }
-        if (relay.prefs.contains("pgCookies")) main.post(this::open);
+        main.post(() -> {
+            close();
+            if (relay.prefs.contains("pgCookies")) open();
+        });
+    }
+
+    // 每个号一个 Cookie 盒子，最早登录的那个号用老名字
+    private String profile() {
+        return relay.prefs.getString("pgProfile", "pg");
     }
 
     String email() {
@@ -102,7 +114,7 @@ final class Playground implements Relay.Channel {
         main.post(() -> {
             JSONArray names;
             try {
-                names = WebChannel.cookies(text, WebChannel.jar("pg"));
+                names = WebChannel.cookies(text, WebChannel.jar(profile()));
             } catch (IllegalStateException e) {
                 done.accept(e.getMessage());
                 return;
@@ -118,11 +130,12 @@ final class Playground implements Relay.Channel {
 
     void logout() {
         String names = relay.prefs.getString("pgCookies", "[]");
+        String box = profile();
         relay.prefs.edit().remove("pgCookies").remove("pgEmail").remove("pgModels").apply();
         rows.clear();
         main.post(() -> {
             try {
-                WebChannel.clear(new JSONArray(names), WebChannel.jar("pg"));
+                WebChannel.clear(new JSONArray(names), WebChannel.jar(box));
             } catch (Exception ignored) {
             }
             close();
@@ -147,7 +160,7 @@ final class Playground implements Relay.Channel {
             return;
         }
         web = new WebView(ctx);
-        WebChannel.use(web, "pg");
+        WebChannel.use(web, profile());
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setOffscreenPreRaster(true);

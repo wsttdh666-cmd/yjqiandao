@@ -44,7 +44,7 @@
     async start() {
       try {
         if (!await wait(editor, 30000)) throw new Error('打不开 Gemini 网页，先在浏览器登一次把弹窗点掉');
-        post('ready', '');
+        post('ready', (document.documentElement.innerHTML.match(/"oPEP7c":"([^"]+)"/) || [])[1] || '');
       } catch (e) {
         post('broken', String(e.message || e));
       }

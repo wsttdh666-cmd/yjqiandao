@@ -48,6 +48,10 @@ final class Codex implements Relay.Channel {
         return account != null;
     }
 
+    public void reload() {
+        account = relay.load("codex");
+    }
+
     public String who() {
         return "gpt:" + email();
     }

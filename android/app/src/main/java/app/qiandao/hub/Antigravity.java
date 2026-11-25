@@ -52,6 +52,10 @@ final class Antigravity implements Relay.Channel {
         return account != null;
     }
 
+    public void reload() {
+        account = relay.load("antigravity");
+    }
+
     public String who() {
         return "agy:" + email();
     }

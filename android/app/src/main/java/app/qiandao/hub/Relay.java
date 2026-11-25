@@ -38,6 +38,8 @@ final class Relay {
         List<String> models();
         boolean owns(String model);
         void chat(JSONObject req, Sink sink) throws Exception;
+        // 登录信息被换掉后（切号），按 prefs 里现在的那个号重新加载
+        void reload();
     }
 
     static final class Upstream extends Exception {
@@ -204,6 +206,92 @@ final class Relay {
 
     void fresh() {
         for (Lane l : lanes.values()) l.worked = l.denied = false;
+    }
+
+    // 多个号：当前号的登录信息就是 prefs 里这几项；存起来的其它号放在「<转接>Saved」里，切换时原样搬进搬出
+    private static String[] keys(String p) {
+        switch (p) {
+            case "gpt": return new String[]{"codex"};
+            case "agy": return new String[]{"antigravity"};
+            case "pg": return new String[]{"pgCookies", "pgEmail", "pgModels", "pgProfile"};
+            default: return new String[]{"webCookies", "webEmail", "webProfile"};
+        }
+    }
+
+    private Channel channel(String p) {
+        switch (p) {
+            case "gpt": return codex;
+            case "agy": return agy;
+            case "pg": return pg;
+            default: return web;
+        }
+    }
+
+    private String email(String p) {
+        switch (p) {
+            case "gpt": return codex.email();
+            case "agy": return agy.email();
+            case "pg": return pg.email();
+            default: return web.email();
+        }
+    }
+
+    JSONArray saved(String p) {
+        try {
+            return new JSONArray(prefs.getString(p + "Saved", "[]"));
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    // 把当前号收进已存列表，当前位置空出来
+    private void park(String p) throws Exception {
+        String email = email(p);
+        if (email == null) return;
+        JSONObject a = new JSONObject().put("email", email);
+        SharedPreferences.Editor e = prefs.edit();
+        for (String k : keys(p)) {
+            if (prefs.contains(k)) a.put(k, prefs.getString(k, null));
+            e.remove(k);
+        }
+        e.putString(p + "Saved", saved(p).put(a).toString()).commit();
+    }
+
+    private void switched(String p) {
+        channel(p).reload();
+        fresh();
+    }
+
+    synchronized void add(String p) throws Exception {
+        boolean page = p.equals("pg") || p.equals("web");
+        // 老 WebView 只有一个 Cookie 盒子，新号会把旧号的 Cookie 顶掉
+        if (page && !WebChannel.split()) throw new IllegalStateException("系统的 WebView 太旧，存不了多个谷歌号，先去应用商店更新「Android System WebView」");
+        park(p);
+        if (page) prefs.edit().putString(p + "Profile", p + "-" + random(4)).commit();
+        switched(p);
+    }
+
+    synchronized void use(String p, int i) throws Exception {
+        JSONArray list = saved(p);
+        JSONObject a = list.getJSONObject(i);
+        list.remove(i);
+        prefs.edit().putString(p + "Saved", list.toString()).commit();
+        park(p);
+        SharedPreferences.Editor e = prefs.edit();
+        for (String k : keys(p)) {
+            if (a.has(k)) e.putString(k, a.getString(k));
+            else e.remove(k);
+        }
+        e.commit();
+        switched(p);
+    }
+
+    synchronized void drop(String p, int i) throws Exception {
+        JSONArray list = saved(p);
+        JSONObject a = list.getJSONObject(i);
+        list.remove(i);
+        prefs.edit().putString(p + "Saved", list.toString()).commit();
+        if (a.has(p + "Cookies")) WebChannel.forget(new JSONArray(a.getString(p + "Cookies")), a.optString(p + "Profile", p));
     }
 
     void start() throws IOException {
