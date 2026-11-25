@@ -177,19 +177,21 @@ public class AppToolsPlugin extends Plugin {
             return;
         }
         String prov = call.getString("provider");
+        Consumer<String> done = error -> {
+            if (error != null) {
+                call.reject(error);
+                return;
+            }
+            String dup = r.dedupe(prov);
+            JSObject s = state();
+            if (dup != null) s.put("dup", dup);
+            call.resolve(s);
+        };
         if ("pg".equals(prov) || "web".equals(prov)) {
-            Consumer<String> back = error -> {
-                if (error == null) call.resolve(state());
-                else call.reject(error);
-            };
-            if ("web".equals(prov)) r.web.login(call.getString("cookie", ""), back);
-            else r.pg.login(call.getString("cookie", ""), back);
+            if ("web".equals(prov)) r.web.login(call.getString("cookie", ""), done);
+            else r.pg.login(call.getString("cookie", ""), done);
             return;
         }
-        Consumer<String> done = error -> {
-            if (error == null) call.resolve(state());
-            else call.reject(error);
-        };
         try {
             String url = "agy".equals(call.getString("provider")) ? r.agy.begin(done) : r.codex.begin(done);
             getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

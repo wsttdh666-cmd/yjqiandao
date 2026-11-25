@@ -286,6 +286,28 @@ final class Relay {
         switched(p);
     }
 
+    // 新登的号已经在存着的列表里：列表里那份旧的去掉，返回这个邮箱好提示一下
+    synchronized String dedupe(String p) {
+        String email = email(p);
+        if (email == null || !email.contains("@")) return null;
+        JSONArray list = saved(p);
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject a = list.optJSONObject(i);
+            if (!email.equals(a.optString("email"))) continue;
+            list.remove(i);
+            prefs.edit().putString(p + "Saved", list.toString()).commit();
+            String box = a.optString(p + "Profile", p);
+            if (a.has(p + "Cookies") && !box.equals(prefs.getString(p + "Profile", p))) {
+                try {
+                    WebChannel.forget(new JSONArray(a.optString(p + "Cookies")), box);
+                } catch (Exception ignored) {
+                }
+            }
+            return email;
+        }
+        return null;
+    }
+
     synchronized void drop(String p, int i) throws Exception {
         JSONArray list = saved(p);
         JSONObject a = list.getJSONObject(i);

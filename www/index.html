@@ -1508,7 +1508,9 @@ async function relayLogin(p, adding) {
   $('relay' + n + 'Btn').textContent = '登录中…';
   try {
     if (adding) showRelay(await relayCall('relayAccount', { provider: p, action: 'add' }));
-    showRelay(await relayCall('relayLogin', { provider: p, cookie }));
+    const st = await relayCall('relayLogin', { provider: p, cookie });
+    showRelay(st);
+    if (st.dup) $('relay' + n).textContent = '登的还是 ' + st.dup + '，没重复存';
   } catch (e) {
     showRelay(await relayCall('relayState'));
     $('relay' + n).textContent = e.message;
