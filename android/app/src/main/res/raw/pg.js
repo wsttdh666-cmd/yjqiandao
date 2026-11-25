@@ -75,7 +75,7 @@
         const r = await fetch0(API + 'ListModels', { method: 'POST', headers: await headers(), body: '[]', credentials: 'include' });
         const text = await r.text();
         if (!r.ok) throw new Error('读模型列表失败（' + r.status + '）' + text.slice(0, 200));
-        const email = window.WIZ_global_data && WIZ_global_data.oPEP7c;
+        const email = (document.documentElement.innerHTML.match(/"oPEP7c":"([^"]+)"/) || [])[1];
         post('ready', email || '', text.replace(/^\)\]\}'\s*/, ''));
       } catch (e) {
         post('broken', String(e.message || e));

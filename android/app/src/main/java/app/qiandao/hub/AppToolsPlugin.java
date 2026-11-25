@@ -91,10 +91,10 @@ public class AppToolsPlugin extends Plugin {
         s.put("cap", prefs.getInt("cap", 50));
         s.put("hidden", prefs.getStringSet("bad", new java.util.HashSet<>()).size());
         if (r != null) {
-            s.put("gpt", r.codex.email());
-            s.put("pg", r.pg.status());
-            s.put("agy", r.agy.email());
-            s.put("web", r.web.status());
+            s.put("gpt", r.show(r.codex, r.codex.email()));
+            s.put("pg", r.show(r.pg, r.pg.status()));
+            s.put("agy", r.show(r.agy, r.agy.email()));
+            s.put("web", r.show(r.web, r.web.status()));
         }
         return s;
     }
@@ -138,6 +138,7 @@ public class AppToolsPlugin extends Plugin {
     @PluginMethod
     public void relayRecheck(PluginCall call) {
         getContext().getSharedPreferences("relay", android.content.Context.MODE_PRIVATE).edit().remove("bad").apply();
+        if (Relay.running != null) Relay.running.fresh();
         call.resolve(state());
     }
 
@@ -198,6 +199,7 @@ public class AppToolsPlugin extends Plugin {
             else if (r != null && "web".equals(provider)) r.web.logout();
             else if (r != null && "agy".equals(provider)) r.agy.logout();
             else if (r != null) r.codex.logout();
+            if (r != null) r.fresh();
             call.resolve(state());
         } catch (Exception e) {
             call.reject(e.getMessage());

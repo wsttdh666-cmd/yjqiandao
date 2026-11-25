@@ -64,6 +64,7 @@ final class Relay {
     private static final class Lane {
         final Semaphore slots;
         long lastStart, coolUntil;
+        volatile boolean worked, denied;
 
         Lane(int n) {
             slots = new Semaphore(n, true);
@@ -193,6 +194,16 @@ final class Relay {
     void save(String name, JSONObject value) throws Exception {
         if (value == null) prefs.edit().remove(name).apply();
         else prefs.edit().putString(name, Vault.seal(value.toString())).apply();
+    }
+
+    // 面板上这个号的状态：整个号被拒时盖掉原来的邮箱 / 已登录
+    String show(Channel c, String normal) {
+        Lane l = lanes.get(c);
+        return normal != null && l != null && l.denied ? "这个号用不了，重新登录试试" : normal;
+    }
+
+    void fresh() {
+        for (Lane l : lanes.values()) l.worked = l.denied = false;
     }
 
     void start() throws IOException {
@@ -351,11 +362,15 @@ final class Relay {
                 channel.chat(req, sink);
                 sink.finish();
                 note(model, true, "回复 " + sink.chars + " 字 · " + (System.currentTimeMillis() - begin) / 1000 + " 秒");
+                lane.worked = true;
+                lane.denied = false;
             } catch (Upstream e) {
                 note(model, false, e.getMessage());
                 if (e.code == 429) lane.coolUntil = System.currentTimeMillis() + Math.max(e.retryMs, 60000);
+                // 这个号还没成功过就 403：多半是整个号的问题，标在号上，不藏模型
+                if (e.code == 403 && !lane.worked) lane.denied = true;
                 // 这个号没权限用 / 没有这个模型：记下来，下次拉取就不列了（转接面板里能重新检查）
-                if (e.code == 403 || e.code == 404) synchronized (prefs) {
+                else if (e.code == 403 || e.code == 404) synchronized (prefs) {
                     Set<String> bad = new HashSet<>(prefs.getStringSet("bad", new HashSet<>()));
                     bad.add(model);
                     prefs.edit().putStringSet("bad", bad).apply();
