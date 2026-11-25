@@ -340,7 +340,7 @@ final class Relay {
         c.setDoOutput(true);
         c.setConnectTimeout(15000);
         c.setReadTimeout(15000);
-        c.setRequestProperty("Cookie", cookie.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        c.setRequestProperty("Cookie", cookie.get(30, java.util.concurrent.TimeUnit.SECONDS));
         c.getOutputStream().close();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"\\s@]+@[^\"\\s]+)\"").matcher(read(c.getInputStream()));
         List<String> emails = new ArrayList<>();

@@ -186,11 +186,14 @@ public class AppToolsPlugin extends Plugin {
             new Thread(() -> {
                 String dup = r.dedupe(prov);
                 int more = 0;
+                String fail = null;
                 try {
                     more = r.expand(prov);
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    fail = String.valueOf(e);
                 }
                 JSObject s = state();
+                if (fail != null) s.put("moreFail", fail);
                 if (dup != null) s.put("dup", dup);
                 if (more > 0) s.put("more", more);
                 call.resolve(s);
